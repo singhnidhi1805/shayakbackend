@@ -43,7 +43,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
   logger.info(`Server running on port ${PORT}`);
   logger.info('Environment:', process.env.NODE_ENV);
