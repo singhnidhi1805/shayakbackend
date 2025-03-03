@@ -42,7 +42,7 @@ const swaggerDefinition = {
   },
   servers: [
     {
-      url: '/api',
+      url: 'https://shayakbackend-production.up.railway.app/api',
       description: 'Development server',
     },
   ],
