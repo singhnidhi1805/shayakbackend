@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { padding: 20px; }
+        .button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Welcome <%= name %>!</h2>
+        <p>Thank you for joining our platform as a professional service provider.</p>
+        <p>To complete your registration, please:</p>
+        <ol>
+            <li>Complete your profile</li>
+            <li>Upload required documents</li>
+            <li>Wait for verification</li>
+        </ol>
+        <p>Required documents:</p>
+        <ul>
+            <li>Government ID proof</li>
+            <li>Address proof</li>
+            <li>Professional qualifications</li>
+            <li>Experience certificates (if any)</li>
+        </ul>
+        <a href="<%= dashboardUrl %>" class="button">Go to Dashboard</a>
+    </div>
+</body>
+</html>
