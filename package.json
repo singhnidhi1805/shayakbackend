@@ -4,7 +4,6 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node src/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -18,7 +17,7 @@
     "express-validator": "^7.2.1",
     "firebase-admin": "^13.0.2",
     "joi": "^17.13.3",
-     "mongoose": "^7.0.0",
+    "mongoose": "^8.11.0",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.16",
     "redis": "^4.7.0",
