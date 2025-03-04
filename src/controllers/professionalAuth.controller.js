@@ -136,7 +136,7 @@ class ProfessionalAuthController {
       professional.name = name;
       professional.email = email;
       professional.status = 'document_pending';
-      professional.onboardingStep = 'document_upload';
+      professional.onboardingStep = 'documents';
       await professional.save();
 
       // ✅ Send welcome email
