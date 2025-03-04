@@ -1,15 +1,16 @@
-const AWS = require('aws-sdk');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const createError = require('http-errors');
 const logger = require('../config/logger');
 
-// Configure AWS
-AWS.config.update({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION || 'us-east-1'
+// Configure AWS S3 client
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION || 'us-east-1',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+  }
 });
 
-const s3 = new AWS.S3();
 const bucketName = process.env.AWS_S3_BUCKET_NAME;
 
 /**
@@ -38,9 +39,14 @@ const uploadToS3 = async (buffer, key, contentType) => {
       ACL: 'public-read' // Make accessible publicly - configure as needed
     };
 
-    const result = await s3.upload(params).promise();
-    logger.info(`File uploaded successfully: ${result.Location}`);
-    return result.Location;
+    const command = new PutObjectCommand(params);
+    await s3Client.send(command);
+    
+    // Construct the URL (S3 v3 doesn't return the URL directly)
+    const fileUrl = `https://${bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
+    
+    logger.info(`File uploaded successfully: ${fileUrl}`);
+    return fileUrl;
   } catch (error) {
     logger.error('S3 upload error:', error);
     throw createError(500, 'Failed to upload file: ' + error.message);
@@ -66,7 +72,9 @@ const deleteFromS3 = async (fileUrl) => {
       Key: key
     };
     
-    await s3.deleteObject(params).promise();
+    const command = new DeleteObjectCommand(params);
+    await s3Client.send(command);
+    
     logger.info(`File deleted successfully: ${key}`);
   } catch (error) {
     logger.error('S3 delete error:', error);
