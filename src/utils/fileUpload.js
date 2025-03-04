@@ -2,6 +2,13 @@ const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/cl
 const createError = require('http-errors');
 const logger = require('../config/logger');
 
+// Add this at the top of your file
+console.log('Environment Variables:');
+console.log('AWS_REGION:', process.env.AWS_REGION);
+console.log('AWS_S3_BUCKET_NAME:', process.env.AWS_S3_BUCKET_NAME);
+console.log('AWS_ACCESS_KEY_ID exists:', !!process.env.AWS_ACCESS_KEY_ID);
+console.log('AWS_SECRET_ACCESS_KEY exists:', !!process.env.AWS_SECRET_ACCESS_KEY);
+
 // Configure AWS S3 client
 const s3Client = new S3Client({
   region: process.env.AWS_REGION || 'us-east-1',
