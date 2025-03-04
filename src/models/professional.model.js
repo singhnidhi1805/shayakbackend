@@ -1,45 +1,123 @@
 const mongoose = require('mongoose');
 
 const professionalSchema = new mongoose.Schema({
-    name: String,
-    email: String,
-    phone: {
-        type: String,
-        required: true,
-        unique: true
+  name: {
+    type: String,
+    required: true
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  phone: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    unique: true
+  },
+  alternatePhone: {
+    type: String
+  },
+  address: {
+    type: String
+  },
+  city: {
+    type: String
+  },
+  state: {
+    type: String
+  },
+  pincode: {
+    type: String
+  },
+  status: {
+    type: String,
+    enum: ['registration_pending', 'document_pending', 'under_review', 'rejected', 'verified', 'suspended', 'inactive'],
+    default: 'registration_pending'
+  },
+  onboardingStep: {
+    type: String,
+    enum: ['welcome', 'personal_details', 'specializations', 'document_upload', 'completed'],
+    default: 'welcome'
+  },
+  specializations: {
+    type: [String],
+    enum: ['plumbing', 'electrical', 'carpentry', 'cleaning', 'painting', 'landscaping', 'moving', 'pest_control', 'appliance_repair', 'hvac', 'tiling']
+  },
+  isAvailable: {
+    type: Boolean,
+    default: false
+  },
+  currentLocation: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
     },
-    userId: {
-        type: String,
-        unique: true
+    coordinates: {
+      type: [Number],
+      default: [0, 0]
+    }
+  },
+  documents: [{
+    type: {
+      type: String,
+      enum: ['id_proof', 'address_proof', 'professional_certificate'],
+      required: true
+    },
+    fileUrl: {
+      type: String,
+      required: true
+    },
+    fileName: String,
+    mimeType: String,
+    fileSize: Number,
+    uploadedAt: {
+      type: Date,
+      default: Date.now
     },
     status: {
-        type: String,
-        enum: ['registration_pending', 'document_pending', 'under_review', 'rejected', 'verified', 'suspended', 'inactive'],
-        default: 'registration_pending'
+      type: String,
+      enum: ['pending', 'approved', 'rejected'],
+      default: 'pending'
     },
-    specializations: {
-        type: [String],
-        required: true,
-        enum: ['plumbing', 'electrical', 'carpentry', 'cleaning', 'painting']
+    verifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
     },
-    isAvailable: {
-        type: Boolean,
-        default: true
+    verifiedAt: Date,
+    remarks: String
+  }],
+  documentsStatus: {
+    id_proof: {
+      type: String,
+      enum: ['not_submitted', 'pending', 'approved', 'rejected'],
+      default: 'not_submitted'
     },
-    currentLocation: {
-        type: {
-            type: String,
-            enum: ['Point'],
-            default: 'Point'
-        },
-        coordinates: {
-            type: [Number],
-            required: true,
-            default: [77.5946, 12.9716]
-        }
+    address_proof: {
+      type: String,
+      enum: ['not_submitted', 'pending', 'approved', 'rejected'],
+      default: 'not_submitted'
+    },
+    professional_certificate: {
+      type: String,
+      enum: ['not_submitted', 'pending', 'approved', 'rejected'],
+      default: 'not_submitted'
     }
+  },
+  employeeId: {
+    type: String,
+    unique: true,
+    sparse: true
+  }
 }, {
-    timestamps: true
+  timestamps: true
 });
 
 // Indexes
@@ -47,15 +125,6 @@ professionalSchema.index({ "currentLocation": "2dsphere" });
 professionalSchema.index({ "specializations": 1 });
 professionalSchema.index({ "status": 1 });
 professionalSchema.index({ "isAvailable": 1 });
-
-// Ensure indexes are created
-professionalSchema.post('save', async function() {
-    try {
-        await this.collection.createIndex({ "currentLocation": "2dsphere" });
-    } catch (error) {
-        console.error('Error creating index:', error);
-    }
-});
 
 const Professional = mongoose.model('Professional', professionalSchema);
 module.exports = Professional;
