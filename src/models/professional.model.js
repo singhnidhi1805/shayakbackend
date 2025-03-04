@@ -42,10 +42,10 @@ const professionalSchema = new mongoose.Schema({
     default: 'registration_pending'
   },
   onboardingStep: {
-    type: String,
-    enum: ['welcome', 'personal_details', 'specializations', 'document_upload', 'completed'],
-    default: 'welcome'
-  },
+  type: String,
+  enum: ['welcome', 'personal_details', 'specializations', 'documents', 'completed'],
+  default: 'welcome'
+},
   specializations: {
     type: [String],
     enum: ['plumbing', 'electrical', 'carpentry', 'cleaning', 'painting', 'landscaping', 'moving', 'pest_control', 'appliance_repair', 'hvac', 'tiling']
