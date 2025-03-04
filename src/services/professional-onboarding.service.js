@@ -149,7 +149,7 @@ class ProfessionalOnboardingService {
           $set: {
             [`documentsStatus.${documentType}`]: 'pending',
             status: 'under_review',
-            onboardingStep: 'document_upload'
+            onboardingStep: 'documents'
           },
           $push: {
             documents: {
@@ -354,7 +354,7 @@ class ProfessionalOnboardingService {
           };
           progressData.specializations = professional.specializations;
           break;
-        case 'document_upload':
+        case 'documents':
         case 'completed':
           progressData.personalDetails = {
             name: professional.name,
