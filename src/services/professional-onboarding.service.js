@@ -14,6 +14,51 @@ class ProfessionalOnboardingService {
     this.smsService = new SMSService();
   }
 
+  async saveOnboardingProgress(userId, step, data) {
+    try {
+      let updateFields = {
+        onboardingStep: step
+      };
+
+      // Set different fields based on the step
+      switch (step) {
+        case 'personal_details':
+          updateFields = {
+            ...updateFields,
+            name: data.name,
+            email: data.email,
+            alternatePhone: data.alternatePhone,
+            address: data.address,
+            city: data.city,
+            state: data.state,
+            pincode: data.pincode
+          };
+          break;
+        case 'specializations':
+          updateFields = {
+            ...updateFields,
+            specializations: data
+          };
+          break;
+        case 'documents':
+          // Document handling is done in uploadDocument method
+          break;
+      }
+
+      // Find and update professional in a single operation
+      const professional = await Professional.findOneAndUpdate(
+        { userId },
+        { $set: updateFields },
+        { new: true, upsert: true, runValidators: true }
+      );
+
+      return { success: true, professional };
+    } catch (error) {
+      logger.error('Error saving onboarding progress:', error);
+      throw error;
+    }
+  }
+
   async initiateOnboarding(userId, professionalData) {
     try {
       // Check if professional already exists
@@ -25,67 +70,42 @@ class ProfessionalOnboardingService {
       });
   
       if (existingProfessional) {
-        throw createError(409, 'Professional already exists');
+        // If already exists, just update the step
+        return await this.saveOnboardingProgress(userId, 'personal_details', professionalData);
       }
   
-      // Get and update professional in one atomic operation
-      const professional = await Professional.findOneAndUpdate(
-        { _id: userId },
-        {
-          $set: {
-            name: professionalData.name,
-            email: professionalData.email,
-            specializations: professionalData.specializations,
-            status: 'registration_pending',
-            onboardingStep: 'document_upload'
-          }
-        },
-        { new: true, runValidators: true }
-      );
+      // Create new professional
+      const professional = new Professional({
+        userId,
+        name: professionalData.name,
+        email: professionalData.email.toLowerCase().trim(),
+        status: 'registration_pending',
+        onboardingStep: 'personal_details'
+      });
+      
+      await professional.save();
   
-      if (!professional) {
-        throw createError(404, 'Professional not found');
-      }
-  
-      // Send notifications asynchronously
-      Promise.all([
-        this.emailService.sendEmail({
-          template: 'welcome-professional',
-          to: professional.email,
-          subject: 'Welcome to Our Platform',
-          data: { 
-            name: professional.name,
-            specializations: professional.specializations.join(', '),
-            dashboardUrl: process.env.DASHBOARD_URL || 'https://yourplatform.com/dashboard' // Ensure a fallback URL
-          }
-        }),
-        this.smsService.sendSMS(
-          professional.phone,
-          `Welcome ${professional.name}! You are registered as a ${professional.specializations.join(', ')} professional. Please complete your profile and upload required documents.`
-        )
-      ]).catch(error => {
-        logger.error('Notification error during onboarding:', error);
+      // Send welcome notification asynchronously
+      this.emailService.sendEmail({
+        template: 'welcome-professional',
+        to: professional.email,
+        subject: 'Welcome to Our Platform',
+        data: { 
+          name: professional.name,
+          dashboardUrl: process.env.DASHBOARD_URL || 'https://yourplatform.com/dashboard'
+        }
+      }).catch(error => {
+        logger.error('Welcome email error:', error);
       });
   
-      // Create services based on professional's specializations
-      try {
-        await ServiceCreationService.createServicesForProfessional(professional);
-      } catch (serviceCreationError) {
-        // Log the error but don't block the onboarding process
-        logger.warn('Service creation failed', {
-          professionalId: professional._id,
-          error: serviceCreationError.message
-        });
-      }
-  
-      return { professional };
+      return { success: true, professional };
     } catch (error) {
       logger.error('Onboarding initiation error:', error);
       throw error;
     }
   }
   
-  async uploadDocument(professionalId, documentType, file) {
+  async uploadDocument(userId, documentType, file) {
     try {
       // Validate file first
       if (!file?.buffer) {
@@ -103,7 +123,7 @@ class ProfessionalOnboardingService {
       }
 
       // Get professional document for file cleanup
-      const professional = await Professional.findById(professionalId);
+      const professional = await Professional.findOne({ userId });
       if (!professional) {
         throw createError(404, 'Professional not found');
       }
@@ -119,16 +139,17 @@ class ProfessionalOnboardingService {
         }
       }
 
-      const fileKey = `documents/${professionalId}/${documentType}_${Date.now()}`;
+      const fileKey = `documents/${professional._id}/${documentType}_${Date.now()}`;
       fileUrl = await uploadToS3(file.buffer, fileKey, file.mimetype);
 
       // Update document in one atomic operation
       const updatedProfessional = await Professional.findOneAndUpdate(
-        { _id: professionalId },
+        { userId },
         {
           $set: {
             [`documentsStatus.${documentType}`]: 'pending',
-            status: 'under_review'
+            status: 'under_review',
+            onboardingStep: 'document_upload'
           },
           $push: {
             documents: {
@@ -168,7 +189,8 @@ class ProfessionalOnboardingService {
 
       return { 
         success: true, 
-        document: updatedProfessional.documents.find(doc => doc.type === documentType)
+        documentId: updatedProfessional.documents.find(doc => doc.type === documentType)._id,
+        status: 'pending'
       };
     } catch (error) {
       logger.error('Document upload error:', error);
@@ -216,17 +238,21 @@ class ProfessionalOnboardingService {
         throw createError(500, 'Failed to update document status');
       }
 
-      // Check if all documents are verified and update status accordingly
-      const allVerified = Object.values(updatedProfessional.documentsStatus)
-        .every(status => status === 'approved');
+      // Check if all required documents are verified and update status accordingly
+      const requiredDocuments = ['id_proof', 'address_proof'];
+      const requiredDocStatus = requiredDocuments.map(docType => 
+        updatedProfessional.documentsStatus[docType] === 'approved'
+      );
+      
+      const allRequiredVerified = requiredDocStatus.every(Boolean);
 
-      if (allVerified || documentStatus === 'rejected') {
+      if (allRequiredVerified || documentStatus === 'rejected') {
         const statusUpdate = {
-          status: allVerified ? 'verified' : 'document_pending',
-          onboardingStep: allVerified ? 'completed' : updatedProfessional.onboardingStep
+          status: allRequiredVerified ? 'verified' : 'document_pending',
+          onboardingStep: allRequiredVerified ? 'completed' : updatedProfessional.onboardingStep
         };
 
-        if (allVerified && !updatedProfessional.employeeId) {
+        if (allRequiredVerified && !updatedProfessional.employeeId) {
           const year = new Date().getFullYear().toString().substr(-2);
           const count = await Professional.countDocuments();
           statusUpdate.employeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
@@ -250,16 +276,21 @@ class ProfessionalOnboardingService {
             remarks,
             employeeId: professional.employeeId
           }
-        }),
-        sendSMS(
-          professional.phone,
-          `Your ${document.type} document has been ${isValid ? 'approved' : 'rejected'}. ${
-            remarks ? `Remarks: ${remarks}` : ''
-          }`
-        )
+        })
       ];
 
-      if (allVerified) {
+      if (professional.phone) {
+        notificationPromises.push(
+          this.smsService.sendSMS(
+            professional.phone,
+            `Your ${document.type} document has been ${isValid ? 'approved' : 'rejected'}. ${
+              remarks ? `Remarks: ${remarks}` : ''
+            }`
+          )
+        );
+      }
+
+      if (allRequiredVerified) {
         notificationPromises.push(
           this.emailService.sendEmail({
             template: 'onboarding-complete',
@@ -283,21 +314,78 @@ class ProfessionalOnboardingService {
       throw error;
     }
   }
-  // getOnboardingStatus remains unchanged as it doesn't need transactions
-  async getOnboardingStatus(professionalId) {
+
+  async getOnboardingStatus(userId) {
     try {
-      const professional = await Professional.findById(professionalId);
+      const professional = await Professional.findOne({ userId });
       if (!professional) {
         throw createError(404, 'Professional not found');
       }
 
-      const requiredDocuments = ['id_proof', 'address_proof', 'qualification'];
+      const requiredDocuments = ['id_proof', 'address_proof'];
+      const optionalDocuments = ['professional_certificate'];
+      const allDocuments = [...requiredDocuments, ...optionalDocuments];
+      
       const uploadedDocuments = professional.documents.map(doc => doc.type);
+      
+      // Get progress data based on onboarding step
+      let progressData = {};
+      switch (professional.onboardingStep) {
+        case 'personal_details':
+          progressData.personalDetails = {
+            name: professional.name,
+            email: professional.email,
+            alternatePhone: professional.alternatePhone,
+            address: professional.address,
+            city: professional.city,
+            state: professional.state,
+            pincode: professional.pincode
+          };
+          break;
+        case 'specializations':
+          progressData.personalDetails = {
+            name: professional.name,
+            email: professional.email,
+            alternatePhone: professional.alternatePhone,
+            address: professional.address,
+            city: professional.city,
+            state: professional.state,
+            pincode: professional.pincode
+          };
+          progressData.specializations = professional.specializations;
+          break;
+        case 'document_upload':
+        case 'completed':
+          progressData.personalDetails = {
+            name: professional.name,
+            email: professional.email,
+            alternatePhone: professional.alternatePhone,
+            address: professional.address,
+            city: professional.city,
+            state: professional.state,
+            pincode: professional.pincode
+          };
+          progressData.specializations = professional.specializations;
+          progressData.documents = {};
+          
+          // Add document info for each uploaded document
+          professional.documents.forEach(doc => {
+            if (allDocuments.includes(doc.type)) {
+              progressData.documents[doc.type] = {
+                uri: doc.fileUrl,
+                id: doc._id,
+                status: doc.status
+              };
+            }
+          });
+          break;
+      }
       
       return {
         currentStatus: professional.status,
         onboardingStep: professional.onboardingStep,
         employeeId: professional.employeeId,
+        progress: progressData,
         missingDocuments: requiredDocuments.filter(
           doc => !uploadedDocuments.includes(doc)
         ),
