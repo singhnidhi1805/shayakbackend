@@ -1,5 +1,3 @@
-
-
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
@@ -7,6 +5,7 @@ const auth = require('../middleware/auth.middleware');
 const validation = require('../middleware/validation');
 const ProfessionalOnboardingController = require('../controllers/professional-onboarding.controller');
 const professionalValidation = require('../middleware/professional-validation');
+
 // Configure multer for file uploads
 const upload = multer({
   limits: {
@@ -43,19 +42,51 @@ const upload = multer({
  *               name:
  *                 type: string
  *                 example: John Doe
- *               specializations:
- *                 type: array
- *                 items:
- *                   type: string
- *                   enum: [plumbing, electrical, carpentry, cleaning, painting, landscaping, moving, pest_control]
- *                 example: ["plumbing", "electrical"]
  *             required:
  *               - email
  *               - name
- *               - specializations
  *     responses:
  *       200:
  *         description: Onboarding initialized successfully
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ */
+
+/**
+ * @swagger
+ * /professionals/onboarding/progress:
+ *   post:
+ *     summary: Save onboarding progress
+ *     tags: [Professional Onboarding]
+ *     security:
+ *        - bearerAuth: []
+ *     requestBody:
+ *       description: Request body for saving onboarding progress
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               step:
+ *                 type: string
+ *                 enum: [welcome, personal_details, specializations, documents]
+ *                 example: personal_details
+ *               data:
+ *                 type: object
+ *                 example: {
+ *                   "name": "John Doe",
+ *                   "email": "john@example.com",
+ *                   "address": "123 Main St"
+ *                 }
+ *             required:
+ *               - step
+ *               - data
+ *     responses:
+ *       200:
+ *         description: Progress saved successfully
  *       400:
  *         description: Validation error
  *       401:
@@ -85,7 +116,7 @@ const upload = multer({
  *                 format: binary
  *               documentType:
  *                 type: string
- *                 enum: [id_proof, address_proof, qualification]
+ *                 enum: [id_proof, address_proof, professional_certificate]
  *                 description: Type of document being uploaded
  *     responses:
  *       200:
@@ -113,16 +144,22 @@ const upload = multer({
  *           schema:
  *             type: object
  *             properties:
- *               documentId:
+ *               professionalId:
  *                 type: string
  *                 example: 63c9fe8e4f1a4e0012b4b00f
- *               status:
+ *               documentId:
  *                 type: string
- *                 enum: [approved, rejected]
- *                 example: approved
- *               comments:
+ *                 example: 63c9fe8e4f1a4e0012b4b010
+ *               isValid:
+ *                 type: boolean
+ *                 example: true
+ *               remarks:
  *                 type: string
  *                 example: Document is valid.
+ *             required:
+ *               - professionalId
+ *               - documentId
+ *               - isValid
  *     responses:
  *       200:
  *         description: Document verification status updated
@@ -138,7 +175,7 @@ const upload = multer({
  * @swagger
  * /professionals/onboarding/status:
  *   get:
- *     summary: Get onboarding status
+ *     summary: Get onboarding status and saved progress
  *     tags: [Professional Onboarding]
  *     security:
  *       - bearerAuth: []
@@ -155,8 +192,14 @@ router.post(
   '/onboarding/init',
   auth.professional,
   professionalValidation.initiate,
-//   validation,
   ProfessionalOnboardingController.initiateOnboarding
+);
+
+// Save onboarding progress
+router.post(
+  '/onboarding/progress',
+  auth.professional,
+  ProfessionalOnboardingController.saveOnboardingProgress
 );
 
 // Upload document
@@ -164,8 +207,6 @@ router.post(
   '/documents/upload',
   auth.professional,
   upload.single('document'),
-  professionalValidation.uploadDocument,
-//   validation,
   ProfessionalOnboardingController.uploadDocument
 );
 
@@ -174,7 +215,6 @@ router.post(
   '/documents/verify',
   auth.admin,
   professionalValidation.verifyDocument,
-//   validation,
   ProfessionalOnboardingController.verifyDocument
 );
 
