@@ -43,7 +43,6 @@ const uploadToS3 = async (buffer, key, contentType) => {
       Key: key,
       Body: buffer,
       ContentType: contentType,
-      ACL: 'public-read' // Make accessible publicly - configure as needed
     };
 
     const command = new PutObjectCommand(params);
