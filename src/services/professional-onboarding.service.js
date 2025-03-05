@@ -59,51 +59,58 @@ class ProfessionalOnboardingService {
     }
   }
 
-  async initiateOnboarding(userId, professionalData) {
-    try {
-      // Check if professional already exists
-      const existingProfessional = await Professional.findOne({
-        $or: [
-          { userId },
-          { email: professionalData.email }
-        ]
-      });
-  
-      if (existingProfessional) {
-        // If already exists, just update the step
-        return await this.saveOnboardingProgress(userId, 'personal_details', professionalData);
-      }
-  
-      // Create new professional
-      const professional = new Professional({
-        userId,
-        name: professionalData.name,
-        email: professionalData.email.toLowerCase().trim(),
-        status: 'registration_pending',
-        onboardingStep: 'personal_details'
-      });
-      
-      await professional.save();
-  
-      // Send welcome notification asynchronously
-      this.emailService.sendEmail({
-        template: 'welcome-professional',
-        to: professional.email,
-        subject: 'Welcome to Our Platform',
-        data: { 
-          name: professional.name,
-          dashboardUrl: process.env.DASHBOARD_URL || 'https://yourplatform.com/dashboard'
-        }
-      }).catch(error => {
-        logger.error('Welcome email error:', error);
-      });
-  
-      return { success: true, professional };
-    } catch (error) {
-      logger.error('Onboarding initiation error:', error);
-      throw error;
+ async initiateOnboarding(userId, professionalData) {
+  try {
+    // Check if professional already exists
+    const existingProfessional = await Professional.findOne({
+      $or: [
+        { userId },
+        { email: professionalData.email }
+      ]
+    });
+
+    if (existingProfessional) {
+      // If already exists, just update the step
+      return await this.saveOnboardingProgress(userId, 'personal_details', professionalData);
     }
+
+    // Get phone from user document
+    const user = await User.findById(userId);
+    if (!user || !user.phone) {
+      throw createError(400, 'User phone number is required');
+    }
+
+    // Create new professional with all required fields
+    const professional = new Professional({
+      userId,
+      name: professionalData.name,
+      email: professionalData.email.toLowerCase().trim(),
+      phone: user.phone, // Make sure to include the phone number
+      status: 'registration_pending',
+      onboardingStep: 'personal_details'
+    });
+    
+    await professional.save();
+
+    // Send welcome notification asynchronously
+    this.emailService.sendEmail({
+      template: 'welcome-professional',
+      to: professional.email,
+      subject: 'Welcome to Our Platform',
+      data: { 
+        name: professional.name,
+        dashboardUrl: process.env.DASHBOARD_URL || 'https://yourplatform.com/dashboard'
+      }
+    }).catch(error => {
+      logger.error('Welcome email error:', error);
+    });
+
+    return { success: true, professional };
+  } catch (error) {
+    logger.error('Onboarding initiation error:', error);
+    throw error;
   }
+}
   
   async uploadDocument(userId, documentType, file) {
     try {
