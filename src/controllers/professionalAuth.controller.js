@@ -120,33 +120,48 @@ async verifyOtp(req, res) {
 
   // ✅ Update initial profile details
  async updateProfile(req, res) {
-  try {
-    const { name, email } = req.body;
+    try {
+      const { name, email } = req.body;
 
-    if (!name || !email) {
-      throw createError(400, 'Name and email are required');
+      if (!name || !email) {
+        throw createError(400, 'Name and email are required');
+      }
+
+      const professional = await Professional.findById(req.user._id);
+
+      if (professional.status !== 'registration_pending') {
+        throw createError(400, 'Profile already completed');
+      }
+
+      // ✅ Update profile
+      professional.name = name;
+      professional.email = email;
+      professional.status = 'document_pending';
+      professional.onboardingStep = 'personal_details'; 
+      await professional.save();
+
+      // ✅ Send welcome email
+      await sendEmail({
+        to: email,
+        template: 'welcome-professional',
+        data: { name }
+      });
+
+      // ✅ Send SMS notification
+      await sendSMS(
+        professional.phone,
+        `Welcome ${name}! Please upload your documents to complete verification.`
+      );
+
+      res.json({
+        message: 'Profile updated successfully',
+        professional
+      });
+    } catch (error) {
+      res.status(error.status || 500).json({ error: error.message });
     }
-
-    const professional = await Professional.findById(req.user._id);
-
-    if (!professional) {
-      throw createError(404, 'Professional not found');
-    }
-
-    if (professional.status !== 'registration_pending') {
-      throw createError(400, 'Profile already completed');
-    }
-
-    // ✅ Update profile
-    professional.name = name;
-    professional.email = email;
-    professional.status = 'document_pending';
-    professional.onboardingStep = 'personal_details'; // Change to match your enum values
-    await professional.save();
-
-    // Rest of the function...
-  } catch (error) {
-    res.status(error.status || 500).json({ error: error.message });
   }
 }
+
+  
 module.exports = new ProfessionalAuthController();
