@@ -16,8 +16,7 @@ const professionalSchema = new mongoose.Schema({
     unique: true
   },
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    type: String,  // Change from ObjectId to String
     required: true,
     unique: true
   },
@@ -114,7 +113,7 @@ const professionalSchema = new mongoose.Schema({
   employeeId: {
     type: String,
     unique: true,
-    sparse: true
+    sparse: true  // Only apply the unique constraint if the field exists (not null)
   }
 }, {
   timestamps: true
