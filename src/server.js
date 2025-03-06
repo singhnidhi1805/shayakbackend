@@ -26,7 +26,7 @@ const socketService = new SocketService(server);
 app.use('/api/auth', authRoutes);  // This includes user, professional, and admin OTP routes
 app.use('/api/services', require('./routes/service.routes'));
 app.use('/api/bookings', require('./routes/booking.routes'));
-// app.use('/api/professionals', professionalRoutes);
+ app.use('/api/professionals', professionalRoutes);
 app.use('/api/professionals', require('./routes/professional-onboarding.routes'));
 app.use('/api/professional', professionalLocationRoutes);
 app.use('/api/location', require('./routes/location.routes'));
