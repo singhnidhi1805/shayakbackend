@@ -13,7 +13,8 @@ const professionalSchema = new mongoose.Schema({
   phone: {
     type: String,
     required: true,
-    unique: true
+    unique: true,
+    sparse: true  // Only apply unique constraint to non-null values
   },
   userId: {
     type: String,  // Change from ObjectId to String
