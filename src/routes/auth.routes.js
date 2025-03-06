@@ -220,7 +220,7 @@ router.post('/user/verify-otp', userAuth.verifyOtp);
 
 /**
  * @swagger
- * /api/auth/admin/send-otp:
+ * /auth/admin/send-otp:
  *   post:
  *     summary: Send OTP to an admin's phone
  *     tags:
@@ -329,7 +329,7 @@ router.post('/user/verify-otp', userAuth.verifyOtp);
 
 /**
  * @swagger
- * /api/auth/admin/verify-otp:
+ * /auth/admin/verify-otp:
  *   post:
  *     summary: Verify OTP and authenticate the admin
  *     tags:
