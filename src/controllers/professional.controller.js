@@ -43,6 +43,89 @@ const getProfessionals =  async (req, res) => {
   }
 };
 
+const getProfessionalById = async (req, res) => {
+  try {
+    const professional = await Professional.findById(req.params.id).select('-password');
+    
+    if (!professional) {
+      return res.status(404).json({ error: 'Professional not found' });
+    }
+    
+    res.json({ professional });
+  } catch (error) {
+    logger.error('Error fetching professional:', error);
+    res.status(500).json({ error: 'Failed to fetch professional details' });
+  }
+};
+
+const verifyDocument = async (req, res) => {
+  try {
+    const { professionalId, documentId, isValid, remarks } = req.body;
+    
+    const professional = await Professional.findById(professionalId);
+    if (!professional) {
+      return res.status(404).json({ error: 'Professional not found' });
+    }
+    
+    const documentIndex = professional.documents.findIndex(
+      doc => doc._id.toString() === documentId
+    );
+    
+    if (documentIndex === -1) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+    
+    const document = professional.documents[documentIndex];
+    document.status = isValid ? 'approved' : 'rejected';
+    document.verifiedAt = new Date();
+    document.verifiedBy = req.user.id;
+    document.remarks = remarks;
+    
+    // Update the document status in the documentsStatus object
+    professional.documentsStatus[document.type] = isValid ? 'approved' : 'rejected';
+    
+    // Check if all required documents are approved to update status
+    const requiredDocuments = ['id_proof', 'address_proof'];
+    const allVerified = requiredDocuments.every(
+      docType => professional.documentsStatus[docType] === 'approved'
+    );
+    
+    if (allVerified) {
+      professional.status = 'verified';
+      
+      // Generate employee ID if not already assigned
+      if (!professional.employeeId) {
+        const year = new Date().getFullYear().toString().substr(-2);
+        const count = await Professional.countDocuments();
+        professional.employeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
+      }
+    } else if (isValid === false) {
+      professional.status = 'document_pending';
+    }
+    
+    await professional.save();
+    
+    // Send notification
+    try {
+      await sendNotification(professionalId, 'document_verification', {
+        documentType: document.type,
+        status: isValid ? 'approved' : 'rejected',
+        remarks
+      });
+    } catch (notifyError) {
+      logger.warn('Failed to send notification:', notifyError);
+    }
+    
+    res.json({
+      message: `Document ${isValid ? 'approved' : 'rejected'} successfully`,
+      professional
+    });
+  } catch (error) {
+    logger.error('Error verifying document:', error);
+    res.status(500).json({ error: 'Failed to verify document' });
+  }
+};
+
 const getProfessionalAvailability = async (req, res) => {
   try {
     const { date } = req.query;
@@ -174,5 +257,7 @@ module.exports = {
     validateProfessionalDocuments,
     updateProfessionalLocation,
     updateProfessionalProfile,
-    
+    getProfessionalById,
+    verifyDocument
+
   };
