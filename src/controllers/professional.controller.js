@@ -168,7 +168,7 @@ const verifyDocument = async (req, res) => {
       // Don't block the response
     }
 
-    // Return success without the full professional object
+    // Return success with minimal data to keep response size small and fast
     return res.json({ 
       success: true,
       message: `Document ${isValid ? 'approved' : 'rejected'} successfully`, 
