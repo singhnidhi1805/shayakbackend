@@ -371,7 +371,7 @@ router.get('/:id', auth, getProfessionalById);
  *     description: Allows an admin to verify a professional's uploaded documents.
  *     tags: [Professional]
  *     security:
- *       - BearerAuth: []
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
