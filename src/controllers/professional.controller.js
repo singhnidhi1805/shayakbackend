@@ -61,10 +61,52 @@ const getProfessionalById = async (req, res) => {
 const verifyDocument = async (req, res) => {
   try {
     const { professionalId, documentId, isValid, remarks } = req.body;
+    console.log(`Verifying document: ProfessionalID=${professionalId}, DocumentID=${documentId}, isValid=${isValid}`);
     
-    const professional = await Professional.findById(professionalId);
+    if (!professionalId || !documentId) {
+      return res.status(400).json({ error: 'Missing required fields: professionalId and documentId' });
+    }
+    
+    const mongoose = require('mongoose');
+    const Professional = require('../models/professional.model'); // Adjust path as needed
+    
+    // Try different methods to find the professional
+    let professional = null;
+    
+    // 1. First, try to find by _id if it's a valid ObjectId
+    if (mongoose.Types.ObjectId.isValid(professionalId)) {
+      professional = await Professional.findById(professionalId);
+      console.log(`Search by direct ID ${professionalId}: ${professional ? 'Found' : 'Not found'}`);
+    }
+    
+    // 2. If not found, try to find by userId
     if (!professional) {
+      professional = await Professional.findOne({ userId: professionalId });
+      console.log(`Search by userId ${professionalId}: ${professional ? 'Found' : 'Not found'}`);
+    }
+    
+    // 3. If still not found and ID starts with PRO (custom ID), try to find related document
+    if (!professional && typeof professionalId === 'string' && professionalId.startsWith('PRO')) {
+      const userProfessional = await Professional.findOne({ userId: professionalId });
+      
+      if (userProfessional) {
+        console.log(`Found user professional with custom ID: ${professionalId}`);
+        // Now find the professional document that references this user's ID
+        professional = await Professional.findOne({ userId: userProfessional._id.toString() });
+        console.log(`Search for professional linked to user: ${professional ? 'Found' : 'Not found'}`);
+      }
+    }
+    
+    if (!professional) {
+      console.log(`No professional found for ID: ${professionalId}`);
       return res.status(404).json({ error: 'Professional not found' });
+    }
+    
+    console.log(`Found professional: ${professional.name}, Documents: ${professional.documents?.length || 0}`);
+    
+    // Find the document by ID
+    if (!professional.documents || professional.documents.length === 0) {
+      return res.status(404).json({ error: 'No documents found for this professional' });
     }
     
     const documentIndex = professional.documents.findIndex(
@@ -72,16 +114,29 @@ const verifyDocument = async (req, res) => {
     );
     
     if (documentIndex === -1) {
+      console.log(`Document with ID ${documentId} not found for professional ${professional._id}`);
+      console.log(`Available document IDs: ${professional.documents.map(d => d._id.toString())}`);
       return res.status(404).json({ error: 'Document not found' });
     }
     
     const document = professional.documents[documentIndex];
+    console.log(`Found document: ${document.type}, current status: ${document.status}`);
+    
+    // Update document status
     document.status = isValid ? 'approved' : 'rejected';
     document.verifiedAt = new Date();
-    document.verifiedBy = req.user.id;
-    document.remarks = remarks;
+    document.verifiedBy = req.user ? req.user.id : 'system';
+    document.remarks = remarks || '';
     
     // Update the document status in the documentsStatus object
+    if (!professional.documentsStatus) {
+      professional.documentsStatus = {
+        id_proof: 'not_submitted',
+        address_proof: 'not_submitted',
+        professional_certificate: 'not_submitted'
+      };
+    }
+    
     professional.documentsStatus[document.type] = isValid ? 'approved' : 'rejected';
     
     // Check if all required documents are approved to update status
@@ -103,29 +158,50 @@ const verifyDocument = async (req, res) => {
       professional.status = 'document_pending';
     }
     
+    // Save the updated professional document
+    console.log(`Saving professional with updated document status: ${document.type} = ${document.status}`);
     await professional.save();
     
-    // Send notification
+    // Send notification (wrapped in try-catch to prevent errors from blocking the response)
     try {
-      await sendNotification(professionalId, 'document_verification', {
-        documentType: document.type,
-        status: isValid ? 'approved' : 'rejected',
-        remarks
-      });
+      const sendNotification = require('../services/notification.service').sendNotification;
+      if (typeof sendNotification === 'function') {
+        await sendNotification(
+          professional.userId || professional._id.toString(), 
+          'document_verification', 
+          {
+            documentType: document.type,
+            status: isValid ? 'approved' : 'rejected',
+            remarks: remarks || ''
+          }
+        );
+        console.log(`Notification sent for document verification`);
+      }
     } catch (notifyError) {
-      logger.warn('Failed to send notification:', notifyError);
+      console.warn('Failed to send notification:', notifyError);
     }
     
     res.json({
       message: `Document ${isValid ? 'approved' : 'rejected'} successfully`,
-      professional
+      professional: {
+        _id: professional._id,
+        name: professional.name,
+        email: professional.email,
+        status: professional.status,
+        documentsStatus: professional.documentsStatus,
+        documents: professional.documents,
+        // Include any other fields your frontend needs
+      }
     });
   } catch (error) {
-    logger.error('Error verifying document:', error);
-    res.status(500).json({ error: 'Failed to verify document' });
+    console.error('Error verifying document:', error);
+    res.status(500).json({ 
+      error: 'Failed to verify document', 
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 };
-
 const getProfessionalAvailability = async (req, res) => {
   try {
     const { date } = req.query;
