@@ -80,92 +80,81 @@ const verifyDocument = async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // OPTIMIZATION: Use findOneAndUpdate to find and update in one operation
-    // This avoids multiple round trips to the database
-    const updateOperation = await Professional.findOneAndUpdate(
-      { 
-        $or: [
-          { _id: professionalId }, 
-          { userId: professionalId }
-        ],
-        "documents._id": documentId 
-      },
-      { 
-        $set: { 
-          "documents.$.status": isValid ? 'approved' : 'rejected',
-          "documents.$.verifiedAt": new Date(),
-          "documents.$.remarks": remarks || ''
-        } 
-      },
-      { 
-        new: true, // Return the updated document
-        runValidators: true // Run schema validators
+    // Find the professional using the same pattern as the /:id/documents route
+    const mongoose = require('mongoose');
+    let professional = null;
+    
+    // First, try direct ID match
+    if (mongoose.Types.ObjectId.isValid(professionalId)) {
+      professional = await Professional.findById(professionalId);
+      console.log(`Search by direct ID ${professionalId}: ${professional ? 'Found' : 'Not found'}`);
+    }
+    
+    // If not found, try as userId
+    if (!professional) {
+      professional = await Professional.findOne({ userId: professionalId });
+      console.log(`Search by userId ${professionalId}: ${professional ? 'Found' : 'Not found'}`);
+    }
+    
+    // If still not found, this might be a user ID with a PRO prefix
+    if (!professional && professionalId.startsWith('PRO')) {
+      const userProfessional = await Professional.findOne({ userId: professionalId });
+      
+      if (userProfessional) {
+        console.log(`Found user professional with custom ID: ${professionalId}`);
+        professional = await Professional.findOne({ userId: userProfessional._id.toString() });
+        console.log(`Search for professional linked to user: ${professional ? 'Found' : 'Not found'}`);
       }
-    );
-
-    if (!updateOperation) {
-      return res.status(404).json({ error: 'Professional or document not found' });
     }
-
-    // At this point, we have the professional with the updated document
-    // Find the document that was updated
-    const document = updateOperation.documents.find(doc => doc._id.toString() === documentId);
-    if (!document) {
-      return res.status(404).json({ error: 'Document not found after update' });
+    
+    if (!professional) {
+      console.log(`No professional found for ID: ${professionalId}`);
+      return res.status(404).json({ error: 'Professional not found' });
     }
+    
+    console.log(`Found professional: ${professional.name}, ID: ${professional._id}`);
 
-    // OPTIMIZATION: Only one more database operation to update everything else
-    // We update the documentsStatus and check if all required docs are approved
+    // Now that we have the professional, update the document
+    // Find the document in the professional's documents array
+    const documentIndex = professional.documents.findIndex(doc => doc._id.toString() === documentId);
+    
+    if (documentIndex === -1) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+    
+    // Update the document
+    professional.documents[documentIndex].status = isValid ? 'approved' : 'rejected';
+    professional.documents[documentIndex].verifiedAt = new Date();
+    professional.documents[documentIndex].remarks = remarks || '';
+    
+    // Update the documentsStatus
+    const documentType = professional.documents[documentIndex].type;
+    professional.documentsStatus[documentType] = isValid ? 'approved' : 'rejected';
+    
+    // Check if all required documents are approved
     const requiredDocuments = ['id_proof', 'address_proof'];
-    
-    // Update the documentsStatus for this specific document type
-    const updateData = {
-      [`documentsStatus.${document.type}`]: isValid ? 'approved' : 'rejected'
-    };
-    
-    // Set up a flag to track if we need to update the status
-    let statusUpdate = null;
-    
-    // Check if we need to update the overall status
-    if (isValid === false) {
-      // If document was rejected, update status to document_pending
-      statusUpdate = 'document_pending';
-    } else {
-      // If document was approved, we need to check if all required docs are now approved
-      // Get latest document status including our update
-      const documentStatuses = {
-        ...updateOperation.documentsStatus,
-        [document.type]: 'approved'
-      };
-      
-      const allRequiredApproved = requiredDocuments.every(type => 
-        documentStatuses[type] === 'approved'
-      );
-      
-      if (allRequiredApproved) {
-        statusUpdate = 'verified';
-        
-        // Generate employee ID if needed
-        if (!updateOperation.employeeId) {
-          const year = new Date().getFullYear().toString().substr(-2);
-          const count = await Professional.countDocuments();
-          updateData.employeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
-        }
-      }
-    }
-    
-    // If we need to update the status, add it to the update data
-    if (statusUpdate) {
-      updateData.status = statusUpdate;
-    }
-    
-    // Perform the final update
-    await Professional.updateOne(
-      { _id: updateOperation._id },
-      { $set: updateData }
+    const allApproved = requiredDocuments.every(type => 
+      professional.documentsStatus[type] === 'approved'
     );
-
-    // Return success immediately without waiting for notification
+    
+    // Update professional status if needed
+    if (allApproved) {
+      professional.status = 'verified';
+      
+      // Generate employee ID if not present
+      if (!professional.employeeId) {
+        const year = new Date().getFullYear().toString().substr(-2);
+        const count = await Professional.countDocuments();
+        professional.employeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
+      }
+    } else if (isValid === false) {
+      professional.status = 'document_pending';
+    }
+    
+    // Save the professional with all updates in one operation
+    await professional.save();
+    
+    // Send the response immediately
     const response = { 
       success: true,
       message: `Document ${isValid ? 'approved' : 'rejected'} successfully`, 
@@ -176,14 +165,13 @@ const verifyDocument = async (req, res) => {
     res.json(response);
     
     // After sending the response, try to send notification asynchronously
-    // This ensures the API responds quickly even if notification is slow
     if (typeof sendNotification === 'function') {
       try {
         sendNotification(
-          updateOperation._id.toString(),
+          professional._id.toString(),
           'document_verification',
           {
-            documentType: document.type,
+            documentType: documentType,
             status: isValid ? 'approved' : 'rejected',
             remarks: remarks || ''
           }
@@ -194,6 +182,7 @@ const verifyDocument = async (req, res) => {
     }
     
     return; // Function ends here after sending response
+    
   } catch (error) {
     console.error('Document verification error:', error);
     return res.status(500).json({ 
@@ -202,7 +191,6 @@ const verifyDocument = async (req, res) => {
     });
   }
 };
-
 const getProfessionalAvailability = async (req, res) => {
   try {
     const { date } = req.query;
