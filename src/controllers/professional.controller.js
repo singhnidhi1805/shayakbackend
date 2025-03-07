@@ -80,10 +80,34 @@ const verifyDocument = async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    // First check if the professionalId is valid
+    let professional;
+    
+    try {
+      // Try direct match by _id
+      professional = await Professional.findById(professionalId);
+    } catch (error) {
+      console.warn('Error when finding professional by ID:', error.message);
+      // Continue with the next approach
+    }
+
+    // If not found by _id, try other lookups
+    if (!professional) {
+      // Try looking up by userId field
+      professional = await Professional.findOne({ userId: professionalId });
+      console.log(`Looking up by userId: ${professional ? 'Found' : 'Not found'}`);
+    }
+
+    if (!professional) {
+      return res.status(404).json({ error: 'Professional not found' });
+    }
+
+    console.log(`Found professional: ${professional.name}, ID: ${professional._id}`);
+
     // Use a direct database update with MongoDB operations
     const updateResult = await Professional.updateOne(
       { 
-        _id: professionalId, 
+        _id: professional._id,
         "documents._id": documentId 
       },
       { 
@@ -98,23 +122,21 @@ const verifyDocument = async (req, res) => {
     console.log('Update result:', updateResult);
 
     if (updateResult.matchedCount === 0) {
-      return res.status(404).json({ error: 'Professional or document not found' });
+      return res.status(404).json({ error: 'Document not found' });
     }
 
-    // Get the document type to update the documentsStatus
-    const professional = await Professional.findById(professionalId);
-    if (!professional) {
-      return res.status(404).json({ error: 'Professional not found after update' });
-    }
-
-    const document = professional.documents.find(doc => doc._id.toString() === documentId);
+    // Fetch professional again to get the updated document
+    const updatedProfessional = await Professional.findById(professional._id);
+    
+    // Find the document by ID
+    const document = updatedProfessional.documents.find(doc => doc._id.toString() === documentId);
     if (!document) {
       return res.status(404).json({ error: 'Document not found after update' });
     }
 
     // Update the documentsStatus
     await Professional.updateOne(
-      { _id: professionalId },
+      { _id: professional._id },
       { 
         $set: { 
           [`documentsStatus.${document.type}`]: isValid ? 'approved' : 'rejected'
@@ -125,36 +147,36 @@ const verifyDocument = async (req, res) => {
     // Check if all required documents are approved
     const requiredDocuments = ['id_proof', 'address_proof'];
     
-    // Get the updated professional with all changes
-    const updatedProfessional = await Professional.findById(professionalId);
+    // Get the updated professional again with all changes
+    const finalProfessional = await Professional.findById(professional._id);
     
     // Check if all required documents are approved
     const allApproved = requiredDocuments.every(type => 
-      updatedProfessional.documentsStatus[type] === 'approved'
+      finalProfessional.documentsStatus[type] === 'approved'
     );
 
     // Update professional status if needed
     if (allApproved) {
-      updatedProfessional.status = 'verified';
+      finalProfessional.status = 'verified';
       
       // Generate employee ID if not present
-      if (!updatedProfessional.employeeId) {
+      if (!finalProfessional.employeeId) {
         const year = new Date().getFullYear().toString().substr(-2);
         const count = await Professional.countDocuments();
-        updatedProfessional.employeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
+        finalProfessional.employeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
       }
     } else if (isValid === false) {
-      updatedProfessional.status = 'document_pending';
+      finalProfessional.status = 'document_pending';
     }
 
-    await updatedProfessional.save();
+    await finalProfessional.save();
 
     // Try to send notification in the background
     try {
       if (typeof sendNotification === 'function') {
         // Don't await this to avoid blocking
         sendNotification(
-          professionalId,
+          professional._id.toString(),
           'document_verification',
           {
             documentType: document.type,
@@ -168,7 +190,7 @@ const verifyDocument = async (req, res) => {
       // Don't block the response
     }
 
-    // Return success with minimal data to keep response size small and fast
+    // Return success with minimal data 
     return res.json({ 
       success: true,
       message: `Document ${isValid ? 'approved' : 'rejected'} successfully`, 
