@@ -1,22 +1,45 @@
 const Professional = require('../models/professional.model');
 const { sendNotification } = require('../services/notification.service');
 
-const getProfessionals = async (req, res) => {
+const getProfessionals =  async (req, res) => {
   try {
-    const { category, rating, available } = req.query;
-    let query = { role: 'professional' };
+    const { page = 1, limit = 10, search, status } = req.query;
     
-    if (rating) {
-      query.rating = { $gte: Number(rating) };
+    // Build the query
+    const query = {};
+    
+    if (status && status !== 'all') {
+      query.status = status;
     }
-
+    
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { phone: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { employeeId: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    // Count total documents
+    const total = await Professional.countDocuments(query);
+    
+    // Find professionals with pagination
     const professionals = await Professional.find(query)
       .select('-password')
-      .sort({ rating: -1 });
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit));
     
-    res.json(professionals);
+    res.json({
+      professionals,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit)
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    logger.error('Error fetching professionals list:', error);
+    res.status(500).json({ error: 'Failed to fetch professionals' });
   }
 };
 
