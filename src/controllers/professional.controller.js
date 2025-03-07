@@ -45,7 +45,20 @@ const getProfessionals =  async (req, res) => {
 
 const getProfessionalById = async (req, res) => {
   try {
-    const professional = await Professional.findById(req.params.id).select('-password');
+    // Check if we're looking for a professional by their userId (from auth) or their _id (from params)
+    let professionalQuery = {};
+    
+    if (req.params.id) {
+      // Check if the ID is a valid MongoDB ObjectId
+      if (req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
+        professionalQuery = { _id: req.params.id };
+      } else {
+        // If not a valid ObjectId, try to find by userId
+        professionalQuery = { userId: req.params.id };
+      }
+    }
+    
+    const professional = await Professional.findOne(professionalQuery).select('-password');
     
     if (!professional) {
       return res.status(404).json({ error: 'Professional not found' });
@@ -53,7 +66,7 @@ const getProfessionalById = async (req, res) => {
     
     res.json({ professional });
   } catch (error) {
-    logger.error('Error fetching professional:', error);
+    console.error('Error fetching professional:', error);
     res.status(500).json({ error: 'Failed to fetch professional details' });
   }
 };
@@ -67,8 +80,8 @@ const verifyDocument = async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: professionalId and documentId' });
     }
     
-    const mongoose = require('mongoose');
-    const Professional = require('../models/professional.model'); // Adjust path as needed
+    // No need to re-import mongoose if it's already imported at the top of the file
+    // const mongoose = require('mongoose');
     
     // Try different methods to find the professional
     let professional = null;
@@ -125,7 +138,7 @@ const verifyDocument = async (req, res) => {
     // Update document status
     document.status = isValid ? 'approved' : 'rejected';
     document.verifiedAt = new Date();
-    document.verifiedBy = req.user ? req.user.id : 'system';
+    document.verifiedBy = req.user ? req.user._id : 'system'; // Fixed: Use _id instead of id
     document.remarks = remarks || '';
     
     // Update the document status in the documentsStatus object
@@ -162,11 +175,10 @@ const verifyDocument = async (req, res) => {
     console.log(`Saving professional with updated document status: ${document.type} = ${document.status}`);
     await professional.save();
     
-    // Send notification (wrapped in try-catch to prevent errors from blocking the response)
+    // Try to send notification but don't block response if it fails
     try {
-      const sendNotification = require('../services/notification.service').sendNotification;
       if (typeof sendNotification === 'function') {
-        await sendNotification(
+        sendNotification(
           professional.userId || professional._id.toString(), 
           'document_verification', 
           {
@@ -174,34 +186,45 @@ const verifyDocument = async (req, res) => {
             status: isValid ? 'approved' : 'rejected',
             remarks: remarks || ''
           }
-        );
-        console.log(`Notification sent for document verification`);
+        ).catch(err => console.warn('Notification error (non-blocking):', err));
       }
     } catch (notifyError) {
       console.warn('Failed to send notification:', notifyError);
     }
     
+    // Important: Send a properly structured response that matches what the frontend expects
     res.json({
       message: `Document ${isValid ? 'approved' : 'rejected'} successfully`,
       professional: {
         _id: professional._id,
         name: professional.name,
         email: professional.email,
+        phone: professional.phone,
         status: professional.status,
         documentsStatus: professional.documentsStatus,
         documents: professional.documents,
-        // Include any other fields your frontend needs
+        address: professional.address,
+        city: professional.city,
+        state: professional.state,
+        pincode: professional.pincode,
+        employeeId: professional.employeeId,
+        createdAt: professional.createdAt,
+        updatedAt: professional.updatedAt,
+        onboardingStep: professional.onboardingStep,
+        userId: professional.userId,
+        alternatePhone: professional.alternatePhone,
+        specializations: professional.specializations
       }
     });
   } catch (error) {
     console.error('Error verifying document:', error);
     res.status(500).json({ 
       error: 'Failed to verify document', 
-      message: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      message: error.message 
     });
   }
 };
+
 const getProfessionalAvailability = async (req, res) => {
   try {
     const { date } = req.query;
