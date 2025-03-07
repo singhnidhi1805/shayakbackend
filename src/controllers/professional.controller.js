@@ -74,154 +74,142 @@ const getProfessionalById = async (req, res) => {
 const verifyDocument = async (req, res) => {
   try {
     const { professionalId, documentId, isValid, remarks } = req.body;
-    console.log(`Verifying document: ProfessionalID=${professionalId}, DocumentID=${documentId}, isValid=${isValid}`);
+    console.log(`Verifying document: professionalId=${professionalId}, documentId=${documentId}, isValid=${isValid}`);
+    
+    // First, find the professional
+    const Professional = require('../models/professional.model'); // adjust path if needed
+    const mongoose = require('mongoose'); // ensure mongoose is imported
     
     if (!professionalId || !documentId) {
-      return res.status(400).json({ error: 'Missing required fields: professionalId and documentId' });
+      return res.status(400).json({ error: 'Missing required fields' });
     }
     
-    // No need to re-import mongoose if it's already imported at the top of the file
-    // const mongoose = require('mongoose');
-    
-    // Try different methods to find the professional
-    let professional = null;
-    
-    // 1. First, try to find by _id if it's a valid ObjectId
-    if (mongoose.Types.ObjectId.isValid(professionalId)) {
-      professional = await Professional.findById(professionalId);
-      console.log(`Search by direct ID ${professionalId}: ${professional ? 'Found' : 'Not found'}`);
-    }
-    
-    // 2. If not found, try to find by userId
-    if (!professional) {
-      professional = await Professional.findOne({ userId: professionalId });
-      console.log(`Search by userId ${professionalId}: ${professional ? 'Found' : 'Not found'}`);
-    }
-    
-    // 3. If still not found and ID starts with PRO (custom ID), try to find related document
-    if (!professional && typeof professionalId === 'string' && professionalId.startsWith('PRO')) {
-      const userProfessional = await Professional.findOne({ userId: professionalId });
-      
-      if (userProfessional) {
-        console.log(`Found user professional with custom ID: ${professionalId}`);
-        // Now find the professional document that references this user's ID
-        professional = await Professional.findOne({ userId: userProfessional._id.toString() });
-        console.log(`Search for professional linked to user: ${professional ? 'Found' : 'Not found'}`);
-      }
-    }
+    // Find the professional document directly by ID
+    const professional = await Professional.findById(professionalId);
     
     if (!professional) {
-      console.log(`No professional found for ID: ${professionalId}`);
+      console.log(`Professional not found with ID: ${professionalId}`);
       return res.status(404).json({ error: 'Professional not found' });
     }
     
-    console.log(`Found professional: ${professional.name}, Documents: ${professional.documents?.length || 0}`);
+    console.log(`Found professional: ${professional.name}`);
     
-    // Find the document by ID
-    if (!professional.documents || professional.documents.length === 0) {
+    // Find the specific document
+    if (!professional.documents || !Array.isArray(professional.documents)) {
       return res.status(404).json({ error: 'No documents found for this professional' });
     }
     
+    // Find document index
     const documentIndex = professional.documents.findIndex(
       doc => doc._id.toString() === documentId
     );
     
     if (documentIndex === -1) {
-      console.log(`Document with ID ${documentId} not found for professional ${professional._id}`);
-      console.log(`Available document IDs: ${professional.documents.map(d => d._id.toString())}`);
+      console.log(`Document not found with ID: ${documentId}`);
+      console.log(`Available documents: ${professional.documents.map(d => d._id.toString()).join(', ')}`);
       return res.status(404).json({ error: 'Document not found' });
     }
     
-    const document = professional.documents[documentIndex];
-    console.log(`Found document: ${document.type}, current status: ${document.status}`);
-    
-    // Update document status
-    document.status = isValid ? 'approved' : 'rejected';
-    document.verifiedAt = new Date();
-    document.verifiedBy = req.user ? req.user._id : 'system'; // Fixed: Use _id instead of id
-    document.remarks = remarks || '';
-    
-    // Update the document status in the documentsStatus object
-    if (!professional.documentsStatus) {
-      professional.documentsStatus = {
-        id_proof: 'not_submitted',
-        address_proof: 'not_submitted',
-        professional_certificate: 'not_submitted'
-      };
-    }
-    
-    professional.documentsStatus[document.type] = isValid ? 'approved' : 'rejected';
-    
-    // Check if all required documents are approved to update status
-    const requiredDocuments = ['id_proof', 'address_proof'];
-    const allVerified = requiredDocuments.every(
-      docType => professional.documentsStatus[docType] === 'approved'
-    );
-    
-    if (allVerified) {
-      professional.status = 'verified';
-      
-      // Generate employee ID if not already assigned
-      if (!professional.employeeId) {
-        const year = new Date().getFullYear().toString().substr(-2);
-        const count = await Professional.countDocuments();
-        professional.employeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
-      }
-    } else if (isValid === false) {
-      professional.status = 'document_pending';
-    }
-    
-    // Save the updated professional document
-    console.log(`Saving professional with updated document status: ${document.type} = ${document.status}`);
-    await professional.save();
-    
-    // Try to send notification but don't block response if it fails
+    // Update document status directly using MongoDB's update operators
     try {
-      if (typeof sendNotification === 'function') {
-        sendNotification(
-          professional.userId || professional._id.toString(), 
-          'document_verification', 
-          {
-            documentType: document.type,
-            status: isValid ? 'approved' : 'rejected',
-            remarks: remarks || ''
+      // First, update the document status in the documents array
+      await Professional.updateOne(
+        { _id: professionalId, 'documents._id': documentId },
+        { 
+          $set: {
+            'documents.$.status': isValid ? 'approved' : 'rejected',
+            'documents.$.verifiedAt': new Date(),
+            'documents.$.remarks': remarks || '',
+            [`documentsStatus.${professional.documents[documentIndex].type}`]: isValid ? 'approved' : 'rejected'
           }
-        ).catch(err => console.warn('Notification error (non-blocking):', err));
+        }
+      );
+      
+      console.log(`Document status updated to: ${isValid ? 'approved' : 'rejected'}`);
+      
+      // Now check if all required documents are approved to update the overall status
+      const updatedProfessional = await Professional.findById(professionalId);
+      
+      const requiredDocuments = ['id_proof', 'address_proof'];
+      const allVerified = requiredDocuments.every(
+        docType => {
+          const docStatus = updatedProfessional.documentsStatus?.[docType];
+          return docStatus === 'approved';
+        }
+      );
+      
+      let statusUpdate = {};
+      
+      if (allVerified) {
+        statusUpdate.status = 'verified';
+        
+        // Generate employee ID if not already assigned
+        if (!updatedProfessional.employeeId) {
+          const year = new Date().getFullYear().toString().substr(-2);
+          const count = await Professional.countDocuments();
+          statusUpdate.employeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
+        }
+      } else if (isValid === false) {
+        statusUpdate.status = 'document_pending';
       }
-    } catch (notifyError) {
-      console.warn('Failed to send notification:', notifyError);
+      
+      // Apply status update if needed
+      if (Object.keys(statusUpdate).length > 0) {
+        await Professional.updateOne(
+          { _id: professionalId },
+          { $set: statusUpdate }
+        );
+        console.log(`Professional status updated to: ${statusUpdate.status}`);
+      }
+      
+      // Get the final updated professional
+      const finalProfessional = await Professional.findById(professionalId);
+      
+      // Return a new response without circular references
+      return res.json({
+        success: true,
+        message: `Document ${isValid ? 'approved' : 'rejected'} successfully`,
+        professional: {
+          _id: finalProfessional._id,
+          name: finalProfessional.name,
+          email: finalProfessional.email,
+          phone: finalProfessional.phone,
+          status: finalProfessional.status,
+          documentsStatus: finalProfessional.documentsStatus,
+          // Explicitly map documents to avoid circular references
+          documents: finalProfessional.documents.map(doc => ({
+            _id: doc._id,
+            type: doc.type,
+            fileUrl: doc.fileUrl,
+            fileName: doc.fileName,
+            mimeType: doc.mimeType,
+            fileSize: doc.fileSize,
+            uploadedAt: doc.uploadedAt,
+            status: doc.status,
+            verifiedAt: doc.verifiedAt,
+            remarks: doc.remarks
+          })),
+          address: finalProfessional.address,
+          city: finalProfessional.city,
+          state: finalProfessional.state,
+          pincode: finalProfessional.pincode,
+          employeeId: finalProfessional.employeeId,
+          createdAt: finalProfessional.createdAt,
+          updatedAt: finalProfessional.updatedAt,
+          onboardingStep: finalProfessional.onboardingStep,
+          userId: finalProfessional.userId,
+          alternatePhone: finalProfessional.alternatePhone,
+          specializations: finalProfessional.specializations
+        }
+      });
+      
+    } catch (updateError) {
+      console.error('Error updating document:', updateError);
+      return res.status(500).json({ error: 'Failed to update document: ' + updateError.message });
     }
-    
-    // Important: Send a properly structured response that matches what the frontend expects
-    res.json({
-      message: `Document ${isValid ? 'approved' : 'rejected'} successfully`,
-      professional: {
-        _id: professional._id,
-        name: professional.name,
-        email: professional.email,
-        phone: professional.phone,
-        status: professional.status,
-        documentsStatus: professional.documentsStatus,
-        documents: professional.documents,
-        address: professional.address,
-        city: professional.city,
-        state: professional.state,
-        pincode: professional.pincode,
-        employeeId: professional.employeeId,
-        createdAt: professional.createdAt,
-        updatedAt: professional.updatedAt,
-        onboardingStep: professional.onboardingStep,
-        userId: professional.userId,
-        alternatePhone: professional.alternatePhone,
-        specializations: professional.specializations
-      }
-    });
   } catch (error) {
-    console.error('Error verifying document:', error);
-    res.status(500).json({ 
-      error: 'Failed to verify document', 
-      message: error.message 
-    });
+    console.error('Verification error:', error);
+    return res.status(500).json({ error: 'Document verification failed: ' + error.message });
   }
 };
 
