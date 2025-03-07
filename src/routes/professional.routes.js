@@ -10,11 +10,13 @@ const router = express.Router();
 const auth = require('../middleware/auth.middleware');
 const multer = require('multer');
 const { 
-    getProfessionals,
-    getProfessionalAvailability,
-    validateProfessionalDocuments,
-    updateProfessionalLocation,
-    updateProfessionalProfile,
+  getProfessionals,
+  getProfessionalAvailability,
+  validateProfessionalDocuments,
+  updateProfessionalLocation,
+  updateProfessionalProfile,
+  getProfessionalById,
+  verifyDocument
 } = require('../controllers/professional.controller');
 
 const { ProfessionalService } = require('../services/professional.service');
@@ -313,6 +315,97 @@ router.put('/location', auth, updateProfessionalLocation);
  *       500:
  *         description: Server error
  */
+
+
+/**
+ * @swagger
+ * /professionals/{id}:
+ *   get:
+ *     summary: Get professional by ID
+ *     description: Fetches a professional's details by their unique ID.
+ *     tags: [Professional]
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The professional's unique ID.
+ *     responses:
+ *       "200":
+ *         description: Successfully retrieved professional details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   example: "123456789"
+ *                 name:
+ *                   type: string
+ *                   example: "John Doe"
+ *                 email:
+ *                   type: string
+ *                   example: "john.doe@example.com"
+ *                 status:
+ *                   type: string
+ *                   enum: [under_review, verified, rejected]
+ *                   example: "verified"
+ *       "400":
+ *         description: Invalid ID format
+ *       "404":
+ *         description: Professional not found
+ *       "401":
+ *         description: Unauthorized, missing or invalid token
+ *       "500":
+ *         description: Server error
+ */
+router.get('/:id', auth, getProfessionalById);
+
+/**
+ * @swagger
+ * /professionals/documents/verify:
+ *   post:
+ *     summary: Verify professional documents
+ *     description: Allows an admin to verify a professional's uploaded documents.
+ *     tags: [Professional]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               professionalId:
+ *                 type: string
+ *                 example: "123456789"
+ *               documentId:
+ *                 type: string
+ *                 example: "doc123"
+ *               status:
+ *                 type: string
+ *                 enum: [approved, rejected]
+ *                 example: "approved"
+ *               reason:
+ *                 type: string
+ *                 example: "Document verified successfully."
+ *     responses:
+ *       "200":
+ *         description: Document verification status updated successfully
+ *       "400":
+ *         description: Missing or invalid parameters
+ *       "401":
+ *         description: Unauthorized, missing or invalid token
+ *       "404":
+ *         description: Professional or document not found
+ *       "500":
+ *         description: Server error
+ */
+router.post('/documents/verify', auth, verifyDocument);
+
 
 router.put('/profile', auth, updateProfessionalProfile);
 
