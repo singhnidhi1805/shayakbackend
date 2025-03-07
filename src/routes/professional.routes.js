@@ -406,6 +406,101 @@ router.get('/:id', auth, getProfessionalById);
  */
 router.post('/documents/verify', auth, verifyDocument);
 
+/**
+ * @swagger
+ * /professionals/{id}/documents:
+ *   get:
+ *     summary: Get professional documents by professional ID
+ *     description: Fetches the documents of a professional by their ID.
+ *     tags: [Professional]
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The professional's ID (either _id or userId).
+ *     responses:
+ *       "200":
+ *         description: Successfully retrieved professional documents
+ *       "404":
+ *         description: Professional not found
+ *       "500":
+ *         description: Server error
+ */
+router.get('/:id/documents', async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`Fetching documents for professional with ID: ${id}`);
+    
+    const mongoose = require('mongoose');
+    const Professional = require('../models/professional.model'); // Adjust path as needed
+    
+    // Try to find the professional by the given ID
+    let professional = null;
+    
+    // First, try direct ID match
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      professional = await Professional.findById(id);
+      console.log(`Search by direct ID ${id}: ${professional ? 'Found' : 'Not found'}`);
+    }
+    
+    // If not found, try as userId
+    if (!professional) {
+      professional = await Professional.findOne({ userId: id });
+      console.log(`Search by userId ${id}: ${professional ? 'Found' : 'Not found'}`);
+    }
+    
+    // If still not found, this might be a user ID, so check if it matches the first document's pattern
+    if (!professional && id.startsWith('PRO')) {
+      // First, get the user document with this custom ID
+      const userProfessional = await Professional.findOne({ userId: id });
+      
+      if (userProfessional) {
+        console.log(`Found user professional with custom ID: ${id}`);
+        // Now find the professional document that references this user's ID
+        professional = await Professional.findOne({ userId: userProfessional._id.toString() });
+        console.log(`Search for professional linked to user: ${professional ? 'Found' : 'Not found'}`);
+      }
+    }
+    
+    if (!professional) {
+      console.log(`No professional found for ID: ${id}`);
+      return res.status(404).json({ error: 'Professional not found' });
+    }
+    
+    console.log(`Found professional: ${professional.name}, Documents: ${professional.documents.length}`);
+    
+    // Return the professional with documents
+    res.json({ 
+      professional: {
+        _id: professional._id,
+        name: professional.name,
+        email: professional.email,
+        phone: professional.phone,
+        userId: professional.userId,
+        status: professional.status,
+        onboardingStep: professional.onboardingStep,
+        documentsStatus: professional.documentsStatus,
+        documents: professional.documents,
+        // Include other necessary fields
+        address: professional.address,
+        city: professional.city,
+        state: professional.state,
+        pincode: professional.pincode,
+        employeeId: professional.employeeId,
+        createdAt: professional.createdAt,
+        updatedAt: professional.updatedAt,
+        alternatePhone: professional.alternatePhone,
+        specializations: professional.specializations
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching professional documents:', error);
+    res.status(500).json({ error: 'Failed to fetch professional documents: ' + error.message });
+  }
+});
+
 
 router.put('/profile', auth, updateProfessionalProfile);
 
