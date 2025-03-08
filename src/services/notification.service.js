@@ -17,6 +17,20 @@ class NotificationService {
         }
     }
 
+    async sendNotification(userId, type, data) {
+        try {
+          // Just pass through to the existing push notification method
+          return await this.sendPushNotification(userId, {
+            type,
+            ...data
+          });
+        } catch (error) {
+          logger.error('Notification failed:', error);
+          // Don't throw error, just log it to prevent API hanging
+          return false;
+        }
+      }
+
     async sendPushNotification(userId, data) {
         try {
             // Get user's FCM token
