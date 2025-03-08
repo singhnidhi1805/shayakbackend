@@ -1,5 +1,6 @@
 const Professional = require('../models/professional.model');
 const { sendNotification } = require('../services/notification.service');
+const logger = require('../config/logger'); 
 
 const getProfessionals =  async (req, res) => {
   try {
@@ -71,117 +72,144 @@ const getProfessionalById = async (req, res) => {
   }
 };
 
-  const verifyDocument = async (req, res) => {
+  // Replace your verifyDocument function with this improved version
+
+// Optimized verifyDocument function with proper error handling and ID validation
+
+// Modified verifyDocument function to use userId instead of _id
+
+// Updated verifyDocument function to handle your database structure correctly
+
+// Final optimized verifyDocument function for your actual data structure
+
+// Adapted version of verifyDocument that handles both parameter formats
+
+const verifyDocument = async (req, res) => {
   try {
-    console.log('Document verification request:', req.body);
-    const { professionalId, documentId, isValid, remarks } = req.body;
-    
-    if (!professionalId || !documentId || isValid === undefined) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    logger.info('Document verification request received:', req.body);
+
+    const { professionalId, documentId, isValid, status, remarks = '' } = req.body;
+    const approvalStatus = isValid !== undefined ? isValid : status === 'approved';
+
+    // Validate required fields
+    if (!professionalId || !documentId) {
+      logger.warn('Missing required fields:', { professionalId, documentId });
+      return res.status(400).json({ success: false, error: 'Professional ID and Document ID are required' });
     }
-    
-    // Find the professional document
-    let professional = await Professional.findById(professionalId);
-    if (!professional) {
-      // Try finding by userId if ObjectId lookup fails
-      professional = await Professional.findOne({ userId: professionalId });
-      if (!professional) {
-        return res.status(404).json({ error: 'Professional not found' });
-      }
-    }
-    
-    console.log(`Found professional: ${professional.name}`);
-    
-    // Find the specific document to verify
-    const documentIndex = professional.documents.findIndex(
-      doc => doc._id.toString() === documentId
-    );
-    
-    if (documentIndex === -1) {
-      return res.status(404).json({ error: 'Document not found' });
-    }
-    
-    console.log(`Found document at index ${documentIndex}`);
-    
-    // Update the document status
-    const document = professional.documents[documentIndex];
-    document.status = isValid ? 'approved' : 'rejected';
-    document.verifiedAt = new Date();
-    document.verifiedBy = req.user?.id; // Use optional chaining in case req.user is undefined
-    document.remarks = remarks || '';
-    
-    // Update the document status in the documentsStatus object
-    professional.documentsStatus[document.type] = isValid ? 'approved' : 'rejected';
-    
-    // Check if all required documents are approved to update professional status
-    const requiredDocuments = ['id_proof', 'address_proof'];
-    
-    if (isValid) {
-      const allRequiredVerified = requiredDocuments.every(
-        docType => professional.documentsStatus[docType] === 'approved'
-      );
-      
-      if (allRequiredVerified) {
-        professional.status = 'verified';
-        
-        // Generate employee ID if not already assigned
-        if (!professional.employeeId) {
-          const year = new Date().getFullYear().toString().substr(-2);
-          const count = await Professional.countDocuments();
-          professional.employeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
-        }
-      }
-    } else {
-      // If any document is rejected, ensure professional status reflects this
-      professional.status = 'document_pending';
-    }
-    
-    console.log('Saving professional document...');
-    
-    // Save the updated professional document
-    await professional.save();
-    
-    console.log('Professional document saved successfully');
-    
-    // Handle notification in a non-blocking way
+
+    // Fetch professional with timeout
+    let professional;
     try {
-      // Use setTimeout to make this non-blocking
-      setTimeout(() => {
-        const notificationService = require('../services/notification.service');
-        // Use sendPushNotification instead of sendNotification
-        notificationService.sendPushNotification(professionalId, {
-          type: 'document_verification',
-          documentType: document.type,
-          status: isValid ? 'approved' : 'rejected',
-          remarks: remarks || '',
-          employeeId: professional.employeeId
-        }).catch(err => console.warn('Background notification error:', err));
-      }, 0);
-    } catch (notifyError) {
-      console.warn('Failed to queue notification:', notifyError);
+      professional = await Promise.race([
+        Professional.findById(professionalId),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Database query timeout')), 5000))
+      ]);
+    } catch (dbError) {
+      logger.error('Database query error:', dbError);
+      return res.status(500).json({ success: false, error: 'Database query error', message: dbError.message });
     }
-    
+
+    // Check if professional exists
+    if (!professional) {
+      logger.warn(`Professional not found with _id: ${professionalId}`);
+      return res.status(404).json({ success: false, error: 'Professional not found' });
+    }
+
+    // Find the document to verify
+    const document = professional.documents.find(doc => doc._id.toString() === documentId);
+    if (!document) {
+      logger.warn(`Document not found for professional ID: ${professionalId}`);
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    // Update document status
+    const newStatus = approvalStatus ? 'approved' : 'rejected';
+    document.status = newStatus;
+    document.verifiedAt = new Date();
+    document.remarks = remarks;
+
+    logger.info(`Updating document status for professional ID: ${professionalId} to ${newStatus}`);
+
+    // Update documentsStatus based on document type
+    professional.documentsStatus[document.type] = newStatus;
+
+    // Determine new professional status
+    const docStatusCounts = { pending: 0, approved: 0, rejected: 0, not_submitted: 0 };
+    Object.values(professional.documentsStatus).forEach(status => docStatusCounts[status]++);
+
+    if (docStatusCounts.rejected > 0) {
+      professional.status = 'rejected';
+    } else if (docStatusCounts.pending > 0) {
+      professional.status = 'under_review';
+    } else if (docStatusCounts.approved > 0 && docStatusCounts.not_submitted === 0) {
+      professional.status = 'verified';
+      if (professional.onboardingStep === 'documents') professional.onboardingStep = 'completed';
+    }
+
+    logger.info(`Professional status updated to: ${professional.status}`);
+
+    // Save changes with timeout
+    try {
+      await Promise.race([
+        professional.save(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Database save timeout')), 8000))
+      ]);
+      logger.info(`Professional document saved successfully for professional ID: ${professionalId}`);
+    } catch (saveError) {
+      logger.error('Error saving professional document:', saveError);
+      return res.status(500).json({ success: false, error: 'Failed to save professional updates', message: saveError.message });
+    }
+
     // Return success response
     return res.status(200).json({
       success: true,
-      message: `Document ${isValid ? 'approved' : 'rejected'} successfully`,
-      professional: {
-        _id: professional._id,
-        name: professional.name,
-        email: professional.email,
-        status: professional.status,
-        employeeId: professional.employeeId,
-        documentsStatus: professional.documentsStatus,
-        documents: professional.documents
-      }
+      message: `Document ${newStatus} successfully`,
+      professional
     });
-    
   } catch (error) {
-    console.error('Error verifying document:', error);
-    return res.status(500).json({ 
-      error: 'Failed to verify document', 
-      details: error.message 
-    });
+    logger.error('Error in document verification:', error);
+    return res.status(500).json({ success: false, error: 'Internal server error', message: error.message });
+  }
+};
+  /**
+ * Helper function to update the professional's overall status
+ * based on their document statuses
+ */
+const updateProfessionalStatus = async (professional) => {
+  // Get counts of each document status
+  const statusCounts = {
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    not_submitted: 0
+  };
+
+  // Count statuses for each document type in documentsStatus
+  for (const type in professional.documentsStatus) {
+    const status = professional.documentsStatus[type];
+    if (statusCounts[status] !== undefined) {
+      statusCounts[status]++;
+    }
+  }
+
+  // Determine the professional's overall status
+  if (statusCounts.rejected > 0) {
+    // If any document is rejected, mark the professional as rejected
+    professional.status = 'rejected';
+  } else if (statusCounts.pending > 0) {
+    // If any document is pending, mark as under review
+    professional.status = 'under_review';
+  } else if (statusCounts.not_submitted > 0 && statusCounts.approved > 0) {
+    // If some documents are approved but others not submitted
+    professional.status = 'document_pending';
+  } else if (statusCounts.approved > 0 && statusCounts.not_submitted === 0) {
+    // If all required documents are approved
+    professional.status = 'verified';
+    
+    // Update the onboarding step if they're in the documents step
+    if (professional.onboardingStep === 'documents') {
+      professional.onboardingStep = 'complete';
+    }
   }
 };
 
@@ -314,9 +342,8 @@ module.exports = {
     getProfessionals,
     getProfessionalAvailability,
     validateProfessionalDocuments,
+    verifyDocument,
     updateProfessionalLocation,
     updateProfessionalProfile,
     getProfessionalById,
-    verifyDocument
-
   };
