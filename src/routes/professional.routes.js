@@ -16,7 +16,9 @@ const {
   updateProfessionalLocation,
   updateProfessionalProfile,
   getProfessionalById,
-  verifyDocument
+  verifyDocument,
+  testVerifyDocument,
+  checkDocumentVerificationStatus
 } = require('../controllers/professional.controller');
 
 const { ProfessionalService } = require('../services/professional.service');
@@ -500,6 +502,101 @@ router.get('/:id/documents', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch professional documents: ' + error.message });
   }
 });
+
+/**
+ * @swagger
+ * /professionals/documents/test-verify:
+ *   post:
+ *     summary: Test document verification
+ *     description: Allows an admin to test the verification of a professional's documents.
+ *     tags: [Professional]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               professionalId:
+ *                 type: string
+ *                 example: "123456789"
+ *               documentId:
+ *                 type: string
+ *                 example: "doc123"
+ *               status:
+ *                 type: string
+ *                 enum: [approved, rejected]
+ *                 example: "approved"
+ *               reason:
+ *                 type: string
+ *                 example: "Test verification successful."
+ *     responses:
+ *       "200":
+ *         description: Test document verification status updated successfully
+ *       "400":
+ *         description: Missing or invalid parameters
+ *       "401":
+ *         description: Unauthorized, missing, or invalid token
+ *       "404":
+ *         description: Professional or document not found
+ *       "500":
+ *         description: Server error
+ */
+router.post('/documents/test-verify', auth, testVerifyDocument);
+
+/**
+ * @swagger
+ * /professionals/documents/check-status:
+ *   post:
+ *     summary: Check document verification status
+ *     description: Allows a professional to check the status of their document verification.
+ *     tags: [Professional]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               professionalId:
+ *                 type: string
+ *                 example: "123456789"
+ *               documentId:
+ *                 type: string
+ *                 example: "doc123"
+ *     responses:
+ *       "200":
+ *         description: Document verification status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 documentId:
+ *                   type: string
+ *                   example: "doc123"
+ *                 status:
+ *                   type: string
+ *                   enum: [pending, approved, rejected]
+ *                   example: "approved"
+ *                 remarks:
+ *                   type: string
+ *                   example: "Document verified successfully."
+ *       "400":
+ *         description: Missing or invalid parameters
+ *       "401":
+ *         description: Unauthorized, missing, or invalid token
+ *       "404":
+ *         description: Professional or document not found
+ *       "500":
+ *         description: Server error
+ */
+router.post('/documents/check-status', auth, checkDocumentVerificationStatus);
+
 
 
 router.put('/profile', auth, updateProfessionalProfile);
