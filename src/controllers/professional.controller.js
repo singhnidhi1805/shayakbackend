@@ -71,71 +71,217 @@ const getProfessionalById = async (req, res) => {
   }
 };
 
-const verifyDocument = async (req, res) => {
+// const verifyDocument = async (req, res) => {
+//   try {
+//     const { professionalId, documentId, isValid, remarks } = req.body;
+    
+//     console.log('Verification request received:', {
+//       professionalId,
+//       documentId,
+//       isValid,
+//       remarks
+//     });
+    
+//     if (!professionalId || !documentId || isValid === undefined) {
+//       return res.status(400).json({ error: 'Missing required fields' });
+//     }
+    
+//     // Find the professional document - try both ObjectId and userId
+//     let professional = null;
+    
+//     if (mongoose.Types.ObjectId.isValid(professionalId)) {
+//       professional = await Professional.findById(professionalId);
+//       console.log('Searched by ObjectId:', professional ? 'Found' : 'Not found');
+//     }
+    
+//     if (!professional) {
+//       professional = await Professional.findOne({ userId: professionalId });
+//       console.log('Searched by userId:', professional ? 'Found' : 'Not found');
+//     }
+    
+//     if (!professional) {
+//       return res.status(404).json({ error: 'Professional not found' });
+//     }
+    
+//     // Find the specific document to verify
+//     const documentIndex = professional.documents.findIndex(
+//       doc => doc._id.toString() === documentId
+//     );
+    
+//     if (documentIndex === -1) {
+//       return res.status(404).json({ error: 'Document not found' });
+//     }
+    
+//     console.log(`Found document at index ${documentIndex}`);
+    
+//     // Update the document status
+//     const document = professional.documents[documentIndex];
+//     document.status = isValid ? 'approved' : 'rejected';
+//     document.verifiedAt = new Date();
+//     document.verifiedBy = req.user?.id || null; // Handle case where user info might be missing
+//     document.remarks = remarks || '';
+    
+//     // Update the document status in the documentsStatus object
+//     professional.documentsStatus[document.type] = isValid ? 'approved' : 'rejected';
+    
+//     // Check if all required documents are approved to update professional status
+//     const requiredDocuments = ['id_proof', 'address_proof'];
+    
+//     if (isValid) {
+//       const allRequiredVerified = requiredDocuments.every(
+//         docType => professional.documentsStatus[docType] === 'approved'
+//       );
+      
+//       if (allRequiredVerified) {
+//         professional.status = 'verified';
+        
+//         // Generate employee ID if not already assigned
+//         if (!professional.employeeId) {
+//           const year = new Date().getFullYear().toString().substr(-2);
+//           const count = await Professional.countDocuments();
+//           professional.employeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
+//         }
+//       }
+//     } else {
+//       // If any document is rejected, ensure professional status reflects this
+//       professional.status = 'document_pending';
+//     }
+    
+//     console.log('Saving professional with updated document status');
+    
+//     // Save the updated professional document - this operation could be slow
+//     await professional.save();
+    
+//     console.log('Professional document saved successfully');
+    
+//     // Simplified notification to avoid potential issues
+//     try {
+//       // Using direct import rather than require to avoid circular dependencies
+//       sendNotification(professional.userId, 'document_verification', {
+//         documentType: document.type,
+//         status: isValid ? 'approved' : 'rejected',
+//         remarks: remarks || ''
+//       }).catch(err => console.warn('Notification error (non-blocking):', err));
+//     } catch (notifyError) {
+//       console.warn('Failed to send notification:', notifyError);
+//     }
+    
+//     // Return success response
+//     return res.status(200).json({
+//       success: true,
+//       message: `Document ${isValid ? 'approved' : 'rejected'} successfully`,
+//       professional: {
+//         _id: professional._id,
+//         name: professional.name,
+//         email: professional.email,
+//         status: professional.status,
+//         employeeId: professional.employeeId,
+//         documentsStatus: professional.documentsStatus
+//       }
+//     });
+    
+//   } catch (error) {
+//     console.error('Error verifying document:', error);
+//     return res.status(500).json({ 
+//       error: 'Failed to verify document', 
+//       details: error.message 
+//     });
+//   }
+// };
+
+const testVerifyDocument = async (req, res) => {
   try {
+    const { professionalId, documentId, isValid } = req.body;
+    
+    // Just return success without performing any database operations
+    return res.status(200).json({
+      success: true,
+      message: 'Test verification endpoint working',
+      received: {
+        professionalId,
+        documentId,
+        isValid
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'Test endpoint error' });
+  }
+};
+
+// 2. Now let's fix the actual verification function
+const verifyDocument = async (req, res) => {
+  // Add a timeout to ensure the function doesn't hang indefinitely
+  const responseTimeout = setTimeout(() => {
+    console.error('Document verification timed out!');
+    if (!res.headersSent) {
+      return res.status(500).json({ 
+        error: 'Operation timed out',
+        message: 'The verification request took too long to process'
+      });
+    }
+  }, 25000); // 25 second server-side timeout
+  
+  try {
+    console.log('Verification request body:', req.body);
     const { professionalId, documentId, isValid, remarks } = req.body;
     
-    console.log('Verification request received:', {
-      professionalId,
-      documentId,
-      isValid,
-      remarks
-    });
-    
     if (!professionalId || !documentId || isValid === undefined) {
+      clearTimeout(responseTimeout);
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
-    // Find the professional document - try both ObjectId and userId
-    let professional = null;
+    // Find the professional document using a more efficient approach
+    // Instead of doing multiple queries, use a single query with $or
+    const professionalQuery = {
+      $or: [
+        { _id: mongoose.Types.ObjectId.isValid(professionalId) ? professionalId : null },
+        { userId: professionalId }
+      ]
+    };
     
-    if (mongoose.Types.ObjectId.isValid(professionalId)) {
-      professional = await Professional.findById(professionalId);
-      console.log('Searched by ObjectId:', professional ? 'Found' : 'Not found');
-    }
+    console.log('Finding professional with query:', JSON.stringify(professionalQuery));
+    
+    // Use lean() for better performance when you don't need a full Mongoose document
+    const professional = await Professional.findOne(professionalQuery);
     
     if (!professional) {
-      professional = await Professional.findOne({ userId: professionalId });
-      console.log('Searched by userId:', professional ? 'Found' : 'Not found');
-    }
-    
-    if (!professional) {
+      clearTimeout(responseTimeout);
       return res.status(404).json({ error: 'Professional not found' });
     }
     
-    // Find the specific document to verify
-    const documentIndex = professional.documents.findIndex(
-      doc => doc._id.toString() === documentId
-    );
+    console.log(`Found professional: ${professional.name}`);
     
-    if (documentIndex === -1) {
+    // Find the document by ID
+    const document = professional.documents.id(documentId);
+    
+    if (!document) {
+      clearTimeout(responseTimeout);
       return res.status(404).json({ error: 'Document not found' });
     }
     
-    console.log(`Found document at index ${documentIndex}`);
+    console.log(`Found document of type: ${document.type}`);
     
-    // Update the document status
-    const document = professional.documents[documentIndex];
+    // Update document fields
     document.status = isValid ? 'approved' : 'rejected';
     document.verifiedAt = new Date();
-    document.verifiedBy = req.user?.id || null; // Handle case where user info might be missing
+    document.verifiedBy = req.user?.id || null;
     document.remarks = remarks || '';
     
-    // Update the document status in the documentsStatus object
+    // Update document status in the professional record
     professional.documentsStatus[document.type] = isValid ? 'approved' : 'rejected';
     
-    // Check if all required documents are approved to update professional status
-    const requiredDocuments = ['id_proof', 'address_proof'];
-    
+    // Update professional status based on documents
     if (isValid) {
-      const allRequiredVerified = requiredDocuments.every(
+      // Check if all required documents are approved
+      const requiredDocuments = ['id_proof', 'address_proof'];
+      const allApproved = requiredDocuments.every(
         docType => professional.documentsStatus[docType] === 'approved'
       );
       
-      if (allRequiredVerified) {
+      if (allApproved) {
         professional.status = 'verified';
         
-        // Generate employee ID if not already assigned
+        // Generate employee ID if needed
         if (!professional.employeeId) {
           const year = new Date().getFullYear().toString().substr(-2);
           const count = await Professional.countDocuments();
@@ -143,28 +289,50 @@ const verifyDocument = async (req, res) => {
         }
       }
     } else {
-      // If any document is rejected, ensure professional status reflects this
       professional.status = 'document_pending';
     }
     
-    console.log('Saving professional with updated document status');
+    console.log('Saving professional document...');
     
-    // Save the updated professional document - this operation could be slow
-    await professional.save();
+    // Save the professional record
+    // This is likely where the timeout is happening
+    // Use a promise with timeout to prevent hanging
+    const savePromise = professional.save();
+    const saveWithTimeout = Promise.race([
+      savePromise,
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Database save operation timed out')), 10000);
+      })
+    ]);
     
-    console.log('Professional document saved successfully');
-    
-    // Simplified notification to avoid potential issues
     try {
-      // Using direct import rather than require to avoid circular dependencies
-      sendNotification(professional.userId, 'document_verification', {
-        documentType: document.type,
-        status: isValid ? 'approved' : 'rejected',
-        remarks: remarks || ''
-      }).catch(err => console.warn('Notification error (non-blocking):', err));
-    } catch (notifyError) {
-      console.warn('Failed to send notification:', notifyError);
+      await saveWithTimeout;
+      console.log('Professional document saved successfully');
+    } catch (saveError) {
+      console.error('Error saving professional document:', saveError);
+      clearTimeout(responseTimeout);
+      return res.status(500).json({ 
+        error: 'Database operation timed out', 
+        message: 'Could not complete the verification process'
+      });
     }
+    
+    // Send notification in the background
+    // Don't wait for it to complete
+    try {
+      process.nextTick(() => {
+        sendNotification(professional.userId, 'document_verification', {
+          documentType: document.type,
+          status: isValid ? 'approved' : 'rejected',
+          remarks: remarks || ''
+        }).catch(err => console.warn('Notification error (non-blocking):', err));
+      });
+    } catch (notifyError) {
+      console.warn('Failed to queue notification:', notifyError);
+    }
+    
+    // Clear the timeout since we're responding successfully
+    clearTimeout(responseTimeout);
     
     // Return success response
     return res.status(200).json({
@@ -173,19 +341,70 @@ const verifyDocument = async (req, res) => {
       professional: {
         _id: professional._id,
         name: professional.name,
-        email: professional.email,
         status: professional.status,
-        employeeId: professional.employeeId,
         documentsStatus: professional.documentsStatus
       }
     });
     
   } catch (error) {
-    console.error('Error verifying document:', error);
+    // Clear the timeout since we're responding with an error
+    clearTimeout(responseTimeout);
+    
+    console.error('Error in verifyDocument:', error);
     return res.status(500).json({ 
       error: 'Failed to verify document', 
       details: error.message 
     });
+  }
+};
+
+// 3. Add this function to extract just the document verification logic without database operations
+const checkDocumentVerificationStatus = async (req, res) => {
+  try {
+    const { professionalId, documentId } = req.body;
+    
+    if (!professionalId || !documentId) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    // Find the professional document
+    const professionalQuery = {
+      $or: [
+        { _id: mongoose.Types.ObjectId.isValid(professionalId) ? professionalId : null },
+        { userId: professionalId }
+      ]
+    };
+    
+    // Use projection to get only what we need
+    const professional = await Professional.findOne(professionalQuery, {
+      name: 1,
+      documents: 1,
+      documentsStatus: 1
+    }).lean();
+    
+    if (!professional) {
+      return res.status(404).json({ error: 'Professional not found' });
+    }
+    
+    // Find the document
+    const document = professional.documents.find(
+      doc => doc._id.toString() === documentId
+    );
+    
+    if (!document) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+    
+    return res.status(200).json({
+      professional: {
+        name: professional.name,
+        document: document,
+        documentStatus: professional.documentsStatus[document.type]
+      }
+    });
+  } catch (error) {
+    console.error('Error checking document status:', error);
+    return res.status(500).json({ error: 'Failed to check document status' });
   }
 };
 
@@ -322,6 +541,8 @@ module.exports = {
     updateProfessionalLocation,
     updateProfessionalProfile,
     getProfessionalById,
-    verifyDocument
+    verifyDocument,
+  testVerifyDocument,
+  checkDocumentVerificationStatus
 
   };
