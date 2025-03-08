@@ -90,52 +90,52 @@ router.get('/', getProfessionals);
  */
 router.get('/:id/availability', getProfessionalAvailability);
 
-// /**
-//  * @swagger
-//  * /professionals/documents/validate:
-//  *   post:
-//  *     tags:
-//  *       - Professional
-//  *     summary: Validate the professional's document
-//  *     parameters:
-//  *       - in: body
-//  *         name: document
-//  *         description: Document details to validate
-//  *         required: true
-//  *         schema:
-//  *           type: object
-//  *           properties:
-//  *             professionalId:
-//  *               type: string
-//  *               description: The ID of the professional
-//  *             documentId:
-//  *               type: string
-//  *               description: The ID of the document
-//  *             status:
-//  *               type: string
-//  *               enum:
-//  *                 - approved
-//  *                 - rejected
-//  *               description: Status of the document
-//  *             remarks:
-//  *               type: string
-//  *               description: Additional remarks for the document
-//  *     responses:
-//  *       200:
-//  *         description: Document validated successfully
-//  *         content:
-//  *           application/json:
-//  *             schema:
-//  *               type: object
-//  *               properties:
-//  *                 status:
-//  *                   type: string
-//  *       403:
-//  *         description: Unauthorized
-//  *       500:
-//  *         description: Server error
-//  */
-// router.post('/documents/validate', auth, validateProfessionalDocuments);
+/**
+ * @swagger
+ * /professionals/documents/validate:
+ *   post:
+ *     tags:
+ *       - Professional
+ *     summary: Validate the professional's document
+ *     parameters:
+ *       - in: body
+ *         name: document
+ *         description: Document details to validate
+ *         required: true
+ *         schema:
+ *           type: object
+ *           properties:
+ *             professionalId:
+ *               type: string
+ *               description: The ID of the professional
+ *             documentId:
+ *               type: string
+ *               description: The ID of the document
+ *             status:
+ *               type: string
+ *               enum:
+ *                 - approved
+ *                 - rejected
+ *               description: Status of the document
+ *             remarks:
+ *               type: string
+ *               description: Additional remarks for the document
+ *     responses:
+ *       200:
+ *         description: Document validated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *       403:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.post('/documents/validate', auth, validateProfessionalDocuments);
 
 /**
  * @swagger
@@ -381,15 +381,14 @@ router.get('/:id', auth, getProfessionalById);
  *             properties:
  *               professionalId:
  *                 type: string
- *                 example: "123456789"
+ *                 example: "67c87c63861e81bd0f1400fd"
  *               documentId:
  *                 type: string
- *                 example: "doc123"
- *               status:
- *                 type: string
- *                 enum: [approved, rejected]
- *                 example: "approved"
- *               reason:
+ *                 example: "67cc1be5a6c21230771881d3"
+ *               isValid:
+ *                 type: boolean
+ *                 example: true
+ *               remarks:
  *                 type: string
  *                 example: "Document verified successfully."
  *     responses:
