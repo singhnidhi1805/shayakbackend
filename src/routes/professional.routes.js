@@ -505,7 +505,7 @@ router.get('/:id/documents', async (req, res) => {
 
 /**
  * @swagger
- * /professionals/documents/test-verify:
+ * /professionals/documents/simple-verify:
  *   post:
  *     summary: Test document verification
  *     description: Allows an admin to test the verification of a professional's documents.
@@ -544,7 +544,72 @@ router.get('/:id/documents', async (req, res) => {
  *       "500":
  *         description: Server error
  */
-router.post('/documents/test-verify', auth, testVerifyDocument);
+router.post('/documents/simple-verify', auth, async (req, res) => {
+  try {
+    const { professionalId, documentId, isValid } = req.body;
+    
+    if (!professionalId || !documentId) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    // Import mongoose directly in the function like your working route
+    const mongoose = require('mongoose');
+    const Professional = require('../models/professional.model');
+    
+    // Use the same progressive query approach that works in your GET route
+    let professional = null;
+    
+    if (mongoose.Types.ObjectId.isValid(professionalId)) {
+      professional = await Professional.findById(professionalId);
+    }
+    
+    if (!professional) {
+      professional = await Professional.findOne({ userId: professionalId });
+    }
+    
+    if (!professional) {
+      return res.status(404).json({ error: 'Professional not found' });
+    }
+    
+    // Find and update the document directly
+    const documentIndex = professional.documents.findIndex(
+      doc => doc._id.toString() === documentId
+    );
+    
+    if (documentIndex === -1) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+    
+    // Update the document status
+    professional.documents[documentIndex].status = isValid ? 'approved' : 'rejected';
+    professional.documents[documentIndex].verifiedAt = new Date();
+    professional.documentsStatus[professional.documents[documentIndex].type] = 
+      isValid ? 'approved' : 'rejected';
+    
+    // Save with explicit promise handling and timeout
+    const savePromise = professional.save();
+    
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Save operation timed out')), 10000);
+    });
+    
+    const result = await Promise.race([savePromise, timeoutPromise]);
+    
+    return res.status(200).json({
+      success: true,
+      message: `Document ${isValid ? 'approved' : 'rejected'} successfully`,
+      professional: {
+        _id: professional._id,
+        status: professional.status,
+        documentsStatus: professional.documentsStatus
+      }
+    });
+  } catch (error) {
+    console.error('Error in simple verification:', error);
+    return res.status(500).json({ error: 'Failed to verify document: ' + error.message });
+  }
+});
 
 /**
  * @swagger
