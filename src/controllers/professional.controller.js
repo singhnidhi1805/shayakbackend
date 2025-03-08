@@ -74,123 +74,122 @@ const getProfessionalById = async (req, res) => {
 const verifyDocument = async (req, res) => {
   try {
     const { professionalId, documentId, isValid, remarks } = req.body;
-    console.log(`Verifying document: professionalId=${professionalId}, documentId=${documentId}, isValid=${isValid ? 'true' : 'false'}`);
-
-    if (!professionalId || !documentId) {
+    
+    console.log('Verification request received:', {
+      professionalId,
+      documentId,
+      isValid,
+      remarks
+    });
+    
+    if (!professionalId || !documentId || isValid === undefined) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-
-    // Find the professional using the same pattern as the /:id/documents route
-    const mongoose = require('mongoose');
+    
+    // Find the professional document - try both ObjectId and userId
     let professional = null;
     
-    // First, try direct ID match
     if (mongoose.Types.ObjectId.isValid(professionalId)) {
       professional = await Professional.findById(professionalId);
-      console.log(`Search by direct ID ${professionalId}: ${professional ? 'Found' : 'Not found'}`);
+      console.log('Searched by ObjectId:', professional ? 'Found' : 'Not found');
     }
     
-    // If not found, try as userId
     if (!professional) {
       professional = await Professional.findOne({ userId: professionalId });
-      console.log(`Search by userId ${professionalId}: ${professional ? 'Found' : 'Not found'}`);
-    }
-    
-    // If still not found, this might be a user ID with a PRO prefix
-    if (!professional && professionalId.startsWith('PRO')) {
-      const userProfessional = await Professional.findOne({ userId: professionalId });
-      
-      if (userProfessional) {
-        console.log(`Found user professional with custom ID: ${professionalId}`);
-        professional = await Professional.findOne({ userId: userProfessional._id.toString() });
-        console.log(`Search for professional linked to user: ${professional ? 'Found' : 'Not found'}`);
-      }
+      console.log('Searched by userId:', professional ? 'Found' : 'Not found');
     }
     
     if (!professional) {
-      console.log(`No professional found for ID: ${professionalId}`);
       return res.status(404).json({ error: 'Professional not found' });
     }
     
-    console.log(`Found professional: ${professional.name}, ID: ${professional._id}`);
-
-    // Now that we have the professional, update the document
-    // Find the document in the professional's documents array
-    const documentIndex = professional.documents.findIndex(doc => doc._id.toString() === documentId);
+    // Find the specific document to verify
+    const documentIndex = professional.documents.findIndex(
+      doc => doc._id.toString() === documentId
+    );
     
     if (documentIndex === -1) {
       return res.status(404).json({ error: 'Document not found' });
     }
     
-    // Update the document
-    professional.documents[documentIndex].status = isValid ? 'approved' : 'rejected';
-    professional.documents[documentIndex].verifiedAt = new Date();
-    professional.documents[documentIndex].remarks = remarks || '';
+    console.log(`Found document at index ${documentIndex}`);
     
-    // Update the documentsStatus
-    const documentType = professional.documents[documentIndex].type;
-    professional.documentsStatus[documentType] = isValid ? 'approved' : 'rejected';
+    // Update the document status
+    const document = professional.documents[documentIndex];
+    document.status = isValid ? 'approved' : 'rejected';
+    document.verifiedAt = new Date();
+    document.verifiedBy = req.user?.id || null; // Handle case where user info might be missing
+    document.remarks = remarks || '';
     
-    // Check if all required documents are approved
+    // Update the document status in the documentsStatus object
+    professional.documentsStatus[document.type] = isValid ? 'approved' : 'rejected';
+    
+    // Check if all required documents are approved to update professional status
     const requiredDocuments = ['id_proof', 'address_proof'];
-    const allApproved = requiredDocuments.every(type => 
-      professional.documentsStatus[type] === 'approved'
-    );
     
-    // Update professional status if needed
-    if (allApproved) {
-      professional.status = 'verified';
+    if (isValid) {
+      const allRequiredVerified = requiredDocuments.every(
+        docType => professional.documentsStatus[docType] === 'approved'
+      );
       
-      // Generate employee ID if not present
-      if (!professional.employeeId) {
-        const year = new Date().getFullYear().toString().substr(-2);
-        const count = await Professional.countDocuments();
-        professional.employeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
+      if (allRequiredVerified) {
+        professional.status = 'verified';
+        
+        // Generate employee ID if not already assigned
+        if (!professional.employeeId) {
+          const year = new Date().getFullYear().toString().substr(-2);
+          const count = await Professional.countDocuments();
+          professional.employeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
+        }
       }
-    } else if (isValid === false) {
+    } else {
+      // If any document is rejected, ensure professional status reflects this
       professional.status = 'document_pending';
     }
     
-    // Save the professional with all updates in one operation
+    console.log('Saving professional with updated document status');
+    
+    // Save the updated professional document - this operation could be slow
     await professional.save();
     
-    // Send the response immediately
-    const response = { 
-      success: true,
-      message: `Document ${isValid ? 'approved' : 'rejected'} successfully`, 
-      documentId,
-      status: isValid ? 'approved' : 'rejected'
-    };
+    console.log('Professional document saved successfully');
     
-    res.json(response);
-    
-    // After sending the response, try to send notification asynchronously
-    if (typeof sendNotification === 'function') {
-      try {
-        sendNotification(
-          professional._id.toString(),
-          'document_verification',
-          {
-            documentType: documentType,
-            status: isValid ? 'approved' : 'rejected',
-            remarks: remarks || ''
-          }
-        ).catch(error => console.warn('Notification error (non-blocking):', error));
-      } catch (notifyError) {
-        console.warn('Failed to send notification:', notifyError);
-      }
+    // Simplified notification to avoid potential issues
+    try {
+      // Using direct import rather than require to avoid circular dependencies
+      sendNotification(professional.userId, 'document_verification', {
+        documentType: document.type,
+        status: isValid ? 'approved' : 'rejected',
+        remarks: remarks || ''
+      }).catch(err => console.warn('Notification error (non-blocking):', err));
+    } catch (notifyError) {
+      console.warn('Failed to send notification:', notifyError);
     }
     
-    return; // Function ends here after sending response
+    // Return success response
+    return res.status(200).json({
+      success: true,
+      message: `Document ${isValid ? 'approved' : 'rejected'} successfully`,
+      professional: {
+        _id: professional._id,
+        name: professional.name,
+        email: professional.email,
+        status: professional.status,
+        employeeId: professional.employeeId,
+        documentsStatus: professional.documentsStatus
+      }
+    });
     
   } catch (error) {
-    console.error('Document verification error:', error);
+    console.error('Error verifying document:', error);
     return res.status(500).json({ 
-      error: 'Document verification failed',
-      message: error.message
+      error: 'Failed to verify document', 
+      details: error.message 
     });
   }
 };
+
+
 const getProfessionalAvailability = async (req, res) => {
   try {
     const { date } = req.query;
