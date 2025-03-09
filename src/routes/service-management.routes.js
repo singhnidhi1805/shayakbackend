@@ -13,7 +13,7 @@ const ProfessionalServiceController = require('../controllers/professional-servi
 
 /**
  * @swagger
- * /admin/templates:
+ * /api/admin/templates:
  *   post:
  *     summary: Create a new service template
  *     tags: [AdminServiceTemplates]
@@ -50,7 +50,7 @@ router.post('/admin/templates',
 
 /**
  * @swagger
- * /admin/templates/{id}:
+ * /api/admin/templates/{id}:
  *   put:
  *     summary: Update an existing service template
  *     tags: [AdminServiceTemplates]
@@ -93,7 +93,7 @@ router.put('/admin/templates/:id',
 
 /**
  * @swagger
- * /admin/templates:
+ * /api/admin/templates:
  *   get:
  *     summary: List all service templates
  *     tags: [AdminServiceTemplates]
@@ -134,7 +134,7 @@ router.get('/admin/templates',
 
 /**
  * @swagger
- * /professional/services:
+ * /api/professional/services:
  *   post:
  *     summary: Create a custom service
  *     tags: [ProfessionalServices]
@@ -188,7 +188,7 @@ router.post('/professional/services',
 
 /**
  * @swagger
- * /professional/services/{id}:
+ * /api/professional/services/{id}:
  *   put:
  *     summary: Update an existing custom service
  *     tags: [ProfessionalServices]
@@ -231,7 +231,7 @@ router.put('/professional/services/:id',
 
 /**
  * @swagger
- * /professional/services:
+ * /api/professional/services:
  *   get:
  *     summary: List all custom services for a professional
  *     tags: [ProfessionalServices]

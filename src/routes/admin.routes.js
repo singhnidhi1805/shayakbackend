@@ -12,7 +12,7 @@ const auth = require('../middleware/auth.middleware');
 
 /**
  * @swagger
- * /admin/dashboard/stats:
+ * /api/admin/dashboard/stats:
  *   get:
  *     summary: Get dashboard statistics
  *     description: Retrieves statistics related to professionals, services, and other dashboard metrics.
@@ -59,7 +59,7 @@ router.get('/dashboard/stats', auth.admin, adminController.getDashboardStats);
 
 /**
  * @swagger
- * /admin/profile:
+ * /api/admin/profile:
  *   patch:
  *     summary: Update admin profile
  *     description: Allows an admin to update their profile details, including name, email, and password.
@@ -114,7 +114,7 @@ router.patch('/profile', auth.admin, adminController.updateProfile);
 
 /**
  * @swagger
- * /admin/reports/{reportType}:
+ * /api/admin/reports/{reportType}:
  *   get:
  *     summary: Get report data
  *     description: Fetches report data based on type and time frame.
@@ -169,7 +169,7 @@ router.get('/reports/:reportType', auth.admin, adminController.getReportData);
 
 /**
  * @swagger
- * /admin/reports/{reportType}/export:
+ * /api/admin/reports/{reportType}/export:
  *   get:
  *     summary: Export report data
  *     description: Exports the requested report data as a CSV file.

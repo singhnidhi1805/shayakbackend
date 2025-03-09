@@ -53,9 +53,9 @@ class ProfessionalOnboardingController {
         });
       }
 
-      // If validation passes, proceed with onboarding
+      // Pass the actual user._id to the service
       const result = await professionalOnboardingService.initiateOnboarding(
-        req.user._id,
+        req.user._id, // Use the MongoDB _id directly
         {
           email: email.toLowerCase().trim(),
           name: name.trim()
@@ -98,9 +98,9 @@ class ProfessionalOnboardingController {
         });
       }
       
-      // Process based on step
+      // Pass the user's MongoDB _id directly
       const result = await professionalOnboardingService.saveOnboardingProgress(
-        req.user._id,
+        req.user._id, // Use the MongoDB _id
         step,
         data
       );
@@ -143,8 +143,9 @@ class ProfessionalOnboardingController {
         });
       }
   
+      // Pass the user's MongoDB _id directly
       const result = await professionalOnboardingService.uploadDocument(
-        req.user._id,
+        req.user._id, // Use MongoDB _id
         documentType,
         file
       );
@@ -184,8 +185,9 @@ class ProfessionalOnboardingController {
 
   async getOnboardingStatus(req, res, next) {
     try {
+      // Pass the user's MongoDB _id directly
       const status = await professionalOnboardingService.getOnboardingStatus(
-        req.user._id
+        req.user._id // Use MongoDB _id
       );
       res.json(status);
     } catch (error) {

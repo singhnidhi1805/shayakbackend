@@ -67,7 +67,7 @@ const auth = require('../middleware/auth.middleware');
 
 /**
  * @swagger
- * /location/address:
+ * /api/location/address:
  *   post:
  *     summary: Add a new address
  *     tags: [Location Management]
@@ -105,7 +105,7 @@ router.post('/address', auth.user, locationController.addAddress);
 
 /**
  * @swagger
- * /location/address/{addressId}:
+ * /api/location/address/{addressId}:
  *   put:
  *     summary: Update an existing address
  *     tags: [Location Management]
@@ -150,7 +150,7 @@ router.put('/address/:addressId', authMiddleware, locationController.updateAddre
 
 /**
  * @swagger
- * /location/address/{addressId}:
+ * /api/location/address/{addressId}:
  *   delete:
  *     summary: Delete an address
  *     tags: [Location Management]
@@ -193,7 +193,7 @@ router.delete('/address/:addressId', authMiddleware, locationController.deleteAd
 
 /**
  * @swagger
- * /location/current-location:
+ * /api/location/current-location:
  *   post:
  *     summary: Update user's current location
  *     tags: [Location Management]

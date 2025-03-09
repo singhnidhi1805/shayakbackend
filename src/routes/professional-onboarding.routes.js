@@ -22,7 +22,7 @@ const upload = multer({
 
 /**
  * @swagger
- * /professionals/onboarding/init:
+ * /api/professionals/onboarding/init:
  *   post:
  *     summary: Initialize professional onboarding
  *     tags: [Professional Onboarding]
@@ -56,7 +56,7 @@ const upload = multer({
 
 /**
  * @swagger
- * /professionals/onboarding/progress:
+ * /api/professionals/onboarding/progress:
  *   post:
  *     summary: Save onboarding progress
  *     tags: [Professional Onboarding]
@@ -95,7 +95,7 @@ const upload = multer({
 
 /**
  * @swagger
- * /professionals/documents/upload:
+ * /api/professionals/documents/upload:
  *   post:
  *     summary: Upload document for verification
  *     tags: [Professional Onboarding]
@@ -131,7 +131,7 @@ const upload = multer({
 
 /**
  * @swagger
- * /professionals/documents/verify:
+ * /api/professionals/documents/verify:
  *   post:
  *     summary: Verify uploaded document (Admin only)
  *     tags: [Professional Onboarding]
@@ -173,7 +173,7 @@ const upload = multer({
 
 /**
  * @swagger
- * /professionals/onboarding/status:
+ * /api/professionals/onboarding/status:
  *   get:
  *     summary: Get onboarding status and saved progress
  *     tags: [Professional Onboarding]

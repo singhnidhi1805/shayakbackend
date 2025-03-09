@@ -30,7 +30,7 @@ const upload = multer({ storage });
 
 /**
  * @swagger
- * /services/search:
+ * /api/services/search:
  *   get:
  *     tags:
  *       - Services
@@ -57,7 +57,7 @@ router.get('/search', searchServices);
 
 /**
  * @swagger
- * /services/top-rated:
+ * /api/services/top-rated:
  *   get:
  *     tags:
  *       - Services
@@ -78,7 +78,7 @@ router.get('/top-rated', getTopRatedServices);
 
 /**
  * @swagger
- * /services/category/{category}:
+ * /api/services/category/{category}:
  *   get:
  *     tags:
  *       - Services
@@ -106,7 +106,7 @@ router.get('/category/:category', getServicesByCategory);
 
 /**
  * @swagger
- * /services/{id}:
+ * /api/services/{id}:
  *   get:
  *     tags:
  *       - Services
@@ -134,7 +134,7 @@ router.get('/:id', getServiceDetails);
 
 /**
  * @swagger
- * /services:
+ * /api/services:
  *   get:
  *     tags:
  *       - Services
@@ -181,7 +181,7 @@ router.get('/', getServices);
 // Protected routes
 /**
  * @swagger
- * /services:
+ * /api/services:
  *   post:
  *     tags:
  *       - Services
@@ -211,7 +211,7 @@ router.post('/', auth, upload.single('image'), createService);
 
 /**
  * @swagger
- * /services/{id}:
+ * /api/services/{id}:
  *   put:
  *     tags:
  *       - Services
@@ -247,7 +247,7 @@ router.put('/:id', auth, upload.single('image'), updateService);
 
 /**
  * @swagger
- * /services/{id}:
+ * /api/services/{id}:
  *   delete:
  *     tags:
  *       - Services

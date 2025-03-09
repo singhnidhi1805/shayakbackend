@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const Professional = require('../models/professional.model');
-const otpService = require('../services/otp.service'); // Ensure Twilio/Firebase is correctly set up
+const otpService = require('../services/otp.service');
 const { sendEmail } = require('../services/email.service');
 const { sendSMS } = require('../services/sms.service');
 const createError = require('http-errors');
@@ -43,41 +43,44 @@ class ProfessionalAuthController {
         return res.status(400).json({ error: "Invalid role" });
       }
   
-      // ✅ Real-time OTP verification (removes hardcoded OTP)
+      // ✅ Real-time OTP verification
       const isValidOtp = await otpService.verifyOtp(phone, otp);
   
       if (!isValidOtp) {
         return res.status(401).json({ error: "Invalid OTP" });
       }
   
-      // ✅ Generate a unique userId
-      const generateUserId = () => {
-        return 'PRO' + Date.now().toString().slice(-8) +
-               Math.random().toString(36).substring(2, 5).toUpperCase();
-      };
-  
-      // ✅ Find or create professional with retry logic for userId generation
+      // ✅ Find or create professional
       let professional = await Professional.findOne({ phone });
       
-  
       if (!professional) {
+        // Generate a unique userId
+        const generateUserId = () => {
+          return 'PRO' + Date.now().toString().slice(-8) +
+                 Math.random().toString(36).substring(2, 5).toUpperCase();
+        };
+        
+        let userId = generateUserId();
         let retryCount = 0;
         const maxRetries = 3;
   
+        // Try to create with a unique userId
         while (retryCount < maxRetries) {
           try {
             professional = await Professional.create({
               phone,
-              userId: generateUserId(),
+              userId, // Store the generated ID directly
               name: "Pending",
               email: `${phone}@placeholder.com`,
               status: 'registration_pending',
-              onboardingStep: 'welcome',
-              employeeId: undefined  // Explicitly set to undefined so it won't be included in the document
+              onboardingStep: 'welcome'
+              // No need for employeeId reference
             });
             break;
           } catch (err) {
             if (err.code === 11000 && err.keyPattern && err.keyPattern.userId) {
+              // Regenerate userId if duplicate
+              userId = generateUserId();
               retryCount++;
               continue;
             }
@@ -93,7 +96,7 @@ class ProfessionalAuthController {
       // ✅ Generate JWT token
       const token = jwt.sign(
         {
-          id: professional._id,
+          id: professional._id,  // Use _id directly
           userId: professional.userId,
           role: 'professional',
           phone: professional.phone
@@ -106,6 +109,7 @@ class ProfessionalAuthController {
         message: "OTP verified successfully",
         token,
         user: {
+          _id: professional._id,  // Include _id in the response
           userId: professional.userId,
           phone: professional.phone,
           role: 'professional',
@@ -120,6 +124,7 @@ class ProfessionalAuthController {
       return res.status(500).json({ error: error.message || "Internal server error" });
     }
   }
+  
   // ✅ Update initial profile details
   async updateProfile(req, res) {
     try {
@@ -130,6 +135,10 @@ class ProfessionalAuthController {
       }
 
       const professional = await Professional.findById(req.user._id);
+
+      if (!professional) {
+        throw createError(404, 'Professional not found');
+      }
 
       if (professional.status !== 'registration_pending') {
         throw createError(400, 'Profile already completed');

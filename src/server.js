@@ -10,6 +10,7 @@ const authRoutes = require('./routes/auth.routes');
 const professionalLocationRoutes = require('./routes/professional-location.routes');
 const servicemanagement = require('./routes/service-management.routes');
 const adminRoutes = require('./routes/admin.routes');
+const documentVerificationRoutes = require('./routes/document-verification.routes');
 const setupSwagger = require('./config/swagger');
 const logger = require('./config/logger');
 const http = require('http');
@@ -30,6 +31,7 @@ app.use('/api/bookings', require('./routes/booking.routes'));
  app.use('/api/professionals', professionalRoutes);
 app.use('/api/professionals', require('./routes/professional-onboarding.routes'));
 app.use('/api/professional', professionalLocationRoutes);
+app.use('/api/professionals', require('./routes/document-verification.routes'));
 app.use('/api/location', require('./routes/location.routes'));
 app.use('/api', servicemanagement);
 app.use('/api/admin', adminRoutes);
@@ -45,7 +47,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   logger.info(`Server running on port ${PORT}`);
   logger.info('Environment:', process.env.NODE_ENV);

@@ -16,10 +16,12 @@ const professionalSchema = new mongoose.Schema({
     unique: true, 
     sparse: true // Only apply unique constraint to non-null values 
   },
+  // Public-facing professional ID (like "PRO12345ABC")
   userId: { 
-    type: String, // Changed from ObjectId to String
-    required: true, 
-    unique: true 
+    type: String,
+    required: true,
+    unique: true,
+    index: true // Add index for faster lookup
   },
   alternatePhone: { 
     type: String 
@@ -39,7 +41,8 @@ const professionalSchema = new mongoose.Schema({
   status: { 
     type: String, 
     enum: ['registration_pending', 'document_pending', 'under_review', 'rejected', 'verified', 'suspended', 'inactive'], 
-    default: 'registration_pending' 
+    default: 'registration_pending',
+    index: true // Add index for frequent status queries
   },
   onboardingStep: { 
     type: String, 
@@ -48,11 +51,13 @@ const professionalSchema = new mongoose.Schema({
   },
   specializations: { 
     type: [String],
-    enum: ['plumbing', 'electrical', 'carpentry', 'cleaning', 'painting', 'landscaping', 'moving', 'pest_control', 'appliance_repair', 'hvac', 'tiling'] 
+    enum: ['plumbing', 'electrical', 'carpentry', 'cleaning', 'painting', 'landscaping', 'moving', 'pest_control', 'appliance_repair', 'hvac', 'tiling'],
+    index: true // Add index for filtering by specializations
   },
   isAvailable: { 
     type: Boolean, 
-    default: false 
+    default: false,
+    index: true // Add index for availability filtering
   },
   currentLocation: { 
     type: { 
@@ -114,17 +119,47 @@ const professionalSchema = new mongoose.Schema({
   employeeId: { 
     type: String, 
     unique: true, 
-    sparse: true // Only apply the unique constraint if the field exists (not null)
+    sparse: true, // Only apply the unique constraint if the field exists (not null)
+    index: true // Add index for faster lookup by employeeId
   }
 }, { 
   timestamps: true 
 });
 
-// Indexes
+// Compound index for faster document lookups
+professionalSchema.index({ "_id": 1, "documents._id": 1 });
+
+// Optimize the 2dsphere index
 professionalSchema.index({ "currentLocation": "2dsphere" });
-professionalSchema.index({ "specializations": 1 });
-professionalSchema.index({ "status": 1 });
-professionalSchema.index({ "isAvailable": 1 });
+
+// Add text search index for name, email and phone
+professionalSchema.index(
+  { name: 'text', email: 'text', phone: 'text', employeeId: 'text' },
+  { name: 'professional_text_search', weights: { name: 10, employeeId: 5, email: 3, phone: 2 } }
+);
+
+// Add static method to find a professional by any type of ID
+professionalSchema.statics.findByAnyId = async function(id) {
+  if (!id) return null;
+  
+  // Try different fields one by one
+  let professional = null;
+  
+  // Check for ObjectId format
+  if (mongoose.Types.ObjectId.isValid(id)) {
+    professional = await this.findById(id);
+    if (professional) return professional;
+  }
+  
+  // Try userId field (the "PRO..." string)
+  professional = await this.findOne({ userId: id });
+  if (professional) return professional;
+  
+  // Try employeeId field
+  professional = await this.findOne({ employeeId: id });
+  
+  return professional;
+};
 
 const Professional = mongoose.model('Professional', professionalSchema);
 

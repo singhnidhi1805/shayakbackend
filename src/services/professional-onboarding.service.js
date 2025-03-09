@@ -7,6 +7,7 @@ const logger = require('../config/logger');
 const createError = require('http-errors');
 const ServiceCreationService = require('../services/service-creation.service');
 const SMSService = require('./sms.service');
+const User = require('../models/user.model'); // Add this line
 
 class ProfessionalOnboardingService {
   constructor() {
@@ -14,8 +15,9 @@ class ProfessionalOnboardingService {
     this.smsService = new SMSService();
   }
 
-  async saveOnboardingProgress(userId, step, data) {
+  async saveOnboardingProgress(professionalId, step, data) {
     try {
+      // Ensure we're working with the Professional's _id
       let updateFields = {
         onboardingStep: step
       };
@@ -45,12 +47,16 @@ class ProfessionalOnboardingService {
           break;
       }
 
-      // Find and update professional in a single operation
-      const professional = await Professional.findOneAndUpdate(
-        { userId },
+      // Find and update professional in a single operation - using _id directly
+      const professional = await Professional.findByIdAndUpdate(
+        professionalId,
         { $set: updateFields },
-        { new: true, upsert: true, runValidators: true }
+        { new: true, runValidators: true }
       );
+
+      if (!professional) {
+        throw createError(404, 'Professional not found');
+      }
 
       return { success: true, professional };
     } catch (error) {
@@ -59,36 +65,20 @@ class ProfessionalOnboardingService {
     }
   }
 
-  async initiateOnboarding(userId, professionalData) {
+
+  async initiateOnboarding(professionalId, professionalData) {
     try {
-      // Check if professional already exists
-      const existingProfessional = await Professional.findOne({
-        $or: [
-          { userId },
-          { email: professionalData.email }
-        ]
-      });
+      // Find professional by _id directly
+      const professional = await Professional.findById(professionalId);
   
-      if (existingProfessional) {
-        // If already exists, just update the step
-        return await this.saveOnboardingProgress(userId, 'personal_details', professionalData);
+      if (!professional) {
+        throw createError(404, 'Professional not found');
       }
   
-      // Get phone from user document
-      const user = await User.findById(userId);
-      if (!user || !user.phone) {
-        throw createError(400, 'User phone number is required');
-      }
-  
-      // Create new professional with all required fields
-      const professional = new Professional({
-        userId,
-        name: professionalData.name,
-        email: professionalData.email.toLowerCase().trim(),
-        phone: user.phone, // Make sure to include the phone number
-        status: 'registration_pending',
-        onboardingStep: 'personal_details'
-      });
+      // Update the existing professional with new data
+      professional.name = professionalData.name;
+      professional.email = professionalData.email.toLowerCase().trim();
+      professional.onboardingStep = 'personal_details';
       
       await professional.save();
   
@@ -112,7 +102,7 @@ class ProfessionalOnboardingService {
     }
   }
   
-  async uploadDocument(userId, documentType, file) {
+  async uploadDocument(professionalId, documentType, file) {
     try {
       // Validate file first
       if (!file?.buffer) {
@@ -129,8 +119,8 @@ class ProfessionalOnboardingService {
         throw createError(400, `Invalid file type. Allowed types: ${allowedTypes.join(', ')}`);
       }
 
-      // Get professional document for file cleanup
-      const professional = await Professional.findOne({ userId });
+      // Get professional document for file cleanup - use _id directly
+      const professional = await Professional.findById(professionalId);
       if (!professional) {
         throw createError(404, 'Professional not found');
       }
@@ -149,9 +139,9 @@ class ProfessionalOnboardingService {
       const fileKey = `documents/${professional._id}/${documentType}_${Date.now()}`;
       fileUrl = await uploadToS3(file.buffer, fileKey, file.mimetype);
 
-      // Update document in one atomic operation
-      const updatedProfessional = await Professional.findOneAndUpdate(
-        { userId },
+      // Update document in one atomic operation - use _id directly
+      const updatedProfessional = await Professional.findByIdAndUpdate(
+        professionalId,
         {
           $set: {
             [`documentsStatus.${documentType}`]: 'pending',
@@ -212,12 +202,12 @@ class ProfessionalOnboardingService {
       if (!professional) {
         throw createError(404, 'Professional not found');
       }
-
+  
       const document = professional.documents.find(doc => doc._id.toString() === documentId);
       if (!document) {
         throw createError(404, 'Document not found');
       }
-
+  
       // Prepare update
       const documentStatus = isValid ? 'approved' : 'rejected';
       const updateQuery = {
@@ -229,7 +219,7 @@ class ProfessionalOnboardingService {
           [`documentsStatus.${document.type}`]: documentStatus
         }
       };
-
+  
       // Use atomic findOneAndUpdate with array filters
       const updatedProfessional = await Professional.findOneAndUpdate(
         { _id: professionalId },
@@ -240,11 +230,11 @@ class ProfessionalOnboardingService {
           runValidators: true
         }
       );
-
+  
       if (!updatedProfessional) {
         throw createError(500, 'Failed to update document status');
       }
-
+  
       // Check if all required documents are verified and update status accordingly
       const requiredDocuments = ['id_proof', 'address_proof'];
       const requiredDocStatus = requiredDocuments.map(docType => 
@@ -252,25 +242,34 @@ class ProfessionalOnboardingService {
       );
       
       const allRequiredVerified = requiredDocStatus.every(Boolean);
-
+      
+      // Initialize statusUpdate variable outside the if block
+      let newStatus = updatedProfessional.status;
+      let newOnboardingStep = updatedProfessional.onboardingStep;
+      let newEmployeeId = updatedProfessional.employeeId;
+  
       if (allRequiredVerified || documentStatus === 'rejected') {
-        const statusUpdate = {
-          status: allRequiredVerified ? 'verified' : 'document_pending',
-          onboardingStep: allRequiredVerified ? 'completed' : updatedProfessional.onboardingStep
-        };
-
+        newStatus = allRequiredVerified ? 'verified' : 'document_pending';
+        newOnboardingStep = allRequiredVerified ? 'completed' : updatedProfessional.onboardingStep;
+  
         if (allRequiredVerified && !updatedProfessional.employeeId) {
           const year = new Date().getFullYear().toString().substr(-2);
           const count = await Professional.countDocuments();
-          statusUpdate.employeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
+          newEmployeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
         }
-
+  
         await Professional.updateOne(
           { _id: professionalId },
-          { $set: statusUpdate }
+          { 
+            $set: {
+              status: newStatus,
+              onboardingStep: newOnboardingStep,
+              ...(newEmployeeId ? { employeeId: newEmployeeId } : {})
+            } 
+          }
         );
       }
-
+  
       // Send notifications asynchronously
       const notificationPromises = [
         this.emailService.sendEmail({
@@ -280,12 +279,13 @@ class ProfessionalOnboardingService {
           data: {
             name: professional.name,
             documentType: document.type,
-            remarks,
-            employeeId: professional.employeeId
+            status: documentStatus, // Pass the status to the template
+            remarks: remarks || '',
+            employeeId: newEmployeeId || professional.employeeId || 'Pending'
           }
         })
       ];
-
+  
       if (professional.phone) {
         notificationPromises.push(
           this.smsService.sendSMS(
@@ -296,7 +296,7 @@ class ProfessionalOnboardingService {
           )
         );
       }
-
+  
       if (allRequiredVerified) {
         notificationPromises.push(
           this.emailService.sendEmail({
@@ -305,16 +305,16 @@ class ProfessionalOnboardingService {
             subject: 'Onboarding Complete',
             data: {
               name: professional.name,
-              employeeId: statusUpdate.employeeId
+              employeeId: newEmployeeId || professional.employeeId || 'Pending'
             }
           })
         );
       }
-
+  
       Promise.all(notificationPromises).catch(error => {
         logger.warn('Notification error:', error);
       });
-
+  
       return { success: true, professional: updatedProfessional };
     } catch (error) {
       logger.error('Document verification error:', error);
@@ -322,9 +322,10 @@ class ProfessionalOnboardingService {
     }
   }
 
-  async getOnboardingStatus(userId) {
+  async getOnboardingStatus(professionalId) {
     try {
-      const professional = await Professional.findOne({ userId });
+      // Use _id directly to find the professional
+      const professional = await Professional.findById(professionalId);
       if (!professional) {
         throw createError(404, 'Professional not found');
       }

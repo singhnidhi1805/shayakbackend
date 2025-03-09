@@ -72,146 +72,241 @@ const getProfessionalById = async (req, res) => {
   }
 };
 
-  // Replace your verifyDocument function with this improved version
-
-// Optimized verifyDocument function with proper error handling and ID validation
-
-// Modified verifyDocument function to use userId instead of _id
-
-// Updated verifyDocument function to handle your database structure correctly
-
-// Final optimized verifyDocument function for your actual data structure
-
-// Adapted version of verifyDocument that handles both parameter formats
-
 const verifyDocument = async (req, res) => {
   try {
-    logger.info('Document verification request received:', req.body);
+    // Log request for debugging
+    console.log('Document verification request received:', JSON.stringify(req.body));
+    
+    const { professionalId, documentId, isValid, remarks } = req.body;
 
-    const { professionalId, documentId, isValid, status, remarks = '' } = req.body;
-    const approvalStatus = isValid !== undefined ? isValid : status === 'approved';
-
-    // Validate required fields
+    // Input validation
     if (!professionalId || !documentId) {
-      logger.warn('Missing required fields:', { professionalId, documentId });
-      return res.status(400).json({ success: false, error: 'Professional ID and Document ID are required' });
+      console.log('Missing required fields:', { professionalId, documentId });
+      return res.status(400).json({
+        success: false,
+        error: 'Professional ID and Document ID are required'
+      });
     }
 
-    // Fetch professional with timeout
-    let professional;
-    try {
-      professional = await Promise.race([
-        Professional.findById(professionalId),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Database query timeout')), 5000))
-      ]);
-    } catch (dbError) {
-      logger.error('Database query error:', dbError);
-      return res.status(500).json({ success: false, error: 'Database query error', message: dbError.message });
-    }
+    // Find the professional directly - avoid models and validation that might hang
+    const professional = await mongoose.connection.collection('professionals').findOne({ 
+      _id: mongoose.Types.ObjectId(professionalId) 
+    });
 
-    // Check if professional exists
     if (!professional) {
-      logger.warn(`Professional not found with _id: ${professionalId}`);
-      return res.status(404).json({ success: false, error: 'Professional not found' });
+      console.log('Professional not found with ID:', professionalId);
+      return res.status(404).json({
+        success: false,
+        error: 'Professional not found'
+      });
     }
 
-    // Find the document to verify
-    const document = professional.documents.find(doc => doc._id.toString() === documentId);
-    if (!document) {
-      logger.warn(`Document not found for professional ID: ${professionalId}`);
-      return res.status(404).json({ success: false, error: 'Document not found' });
+    console.log('Found professional:', professional._id.toString());
+    
+    // Check if professional has documents
+    if (!professional.documents || !Array.isArray(professional.documents) || professional.documents.length === 0) {
+      console.log('Professional has no documents');
+      return res.status(400).json({
+        success: false,
+        error: 'Professional has no documents to verify'
+      });
     }
 
-    // Update document status
-    const newStatus = approvalStatus ? 'approved' : 'rejected';
-    document.status = newStatus;
-    document.verifiedAt = new Date();
-    document.remarks = remarks;
+    // Log all document IDs for debugging
+    const docIds = professional.documents.map(doc => doc._id.toString());
+    console.log('Available document IDs:', docIds);
 
-    logger.info(`Updating document status for professional ID: ${professionalId} to ${newStatus}`);
+    // Find the document using string comparison
+    const documentIndex = professional.documents.findIndex(doc => 
+      doc._id.toString() === documentId
+    );
 
-    // Update documentsStatus based on document type
-    professional.documentsStatus[document.type] = newStatus;
-
-    // Determine new professional status
-    const docStatusCounts = { pending: 0, approved: 0, rejected: 0, not_submitted: 0 };
-    Object.values(professional.documentsStatus).forEach(status => docStatusCounts[status]++);
-
-    if (docStatusCounts.rejected > 0) {
-      professional.status = 'rejected';
-    } else if (docStatusCounts.pending > 0) {
-      professional.status = 'under_review';
-    } else if (docStatusCounts.approved > 0 && docStatusCounts.not_submitted === 0) {
-      professional.status = 'verified';
-      if (professional.onboardingStep === 'documents') professional.onboardingStep = 'completed';
+    if (documentIndex === -1) {
+      console.log('Document not found in professional documents');
+      return res.status(404).json({
+        success: false,
+        error: `Document not found. Available IDs: ${docIds.join(', ')}`
+      });
     }
 
-    logger.info(`Professional status updated to: ${professional.status}`);
+    const document = professional.documents[documentIndex];
+    const documentType = document.type;
+    
+    console.log('Found document:', document);
 
-    // Save changes with timeout
-    try {
-      await Promise.race([
-        professional.save(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Database save timeout')), 8000))
-      ]);
-      logger.info(`Professional document saved successfully for professional ID: ${professionalId}`);
-    } catch (saveError) {
-      logger.error('Error saving professional document:', saveError);
-      return res.status(500).json({ success: false, error: 'Failed to save professional updates', message: saveError.message });
+    // Calculate new statuses
+    const newStatus = isValid ? 'approved' : 'rejected';
+    console.log('Updating document status to:', newStatus);
+    
+    // Create update operations
+    const updateOperations = {
+      // Update document status
+      [`documents.${documentIndex}.status`]: newStatus,
+      [`documents.${documentIndex}.verifiedAt`]: new Date(),
+      [`documentsStatus.${documentType}`]: newStatus
+    };
+    
+    // Add remarks if provided
+    if (remarks) {
+      updateOperations[`documents.${documentIndex}.remarks`] = remarks;
     }
-
+    
+    // Directly update the database using updateOne
+    // This bypasses Mongoose validation to avoid hanging
+    const result = await mongoose.connection.collection('professionals').updateOne(
+      { _id: mongoose.Types.ObjectId(professionalId) },
+      { $set: updateOperations }
+    );
+    
+    console.log('Database update result:', result);
+    
+    // If update was successful, update the professional's status
+    if (result.modifiedCount > 0) {
+      // Fetch the updated professional to get current document statuses
+      const updatedProfessional = await mongoose.connection.collection('professionals').findOne({ 
+        _id: mongoose.Types.ObjectId(professionalId) 
+      });
+      
+      // Calculate overall status based on document statuses
+      const documentsStatus = updatedProfessional.documentsStatus || {};
+      let newProfessionalStatus = updatedProfessional.status;
+      
+      // Count different status types
+      const statusCounts = {
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        not_submitted: 0
+      };
+      
+      // Count each status type
+      Object.values(documentsStatus).forEach(status => {
+        if (statusCounts[status] !== undefined) {
+          statusCounts[status]++;
+        }
+      });
+      
+      console.log('Document status counts:', statusCounts);
+      
+      // Determine the professional's overall status
+      if (statusCounts.rejected > 0) {
+        newProfessionalStatus = 'rejected';
+      } else if (statusCounts.pending > 0) {
+        newProfessionalStatus = 'under_review';
+      } else if (statusCounts.not_submitted > 0 && statusCounts.approved > 0) {
+        newProfessionalStatus = 'document_pending';
+      } else if (statusCounts.approved > 0 && statusCounts.not_submitted === 0) {
+        newProfessionalStatus = 'verified';
+      }
+      
+      console.log('Updating professional status from', updatedProfessional.status, 'to', newProfessionalStatus);
+      
+      // Update onboarding step if appropriate
+      let onboardingStep = updatedProfessional.onboardingStep;
+      if (newProfessionalStatus === 'verified' && updatedProfessional.onboardingStep === 'documents') {
+        onboardingStep = 'completed';
+      }
+      
+      // Update professional status in a separate operation
+      const statusResult = await mongoose.connection.collection('professionals').updateOne(
+        { _id: mongoose.Types.ObjectId(professionalId) },
+        { 
+          $set: {
+            status: newProfessionalStatus,
+            onboardingStep: onboardingStep,
+            updatedAt: new Date()
+          } 
+        }
+      );
+      
+      console.log('Status update result:', statusResult);
+    }
+    
+    // Fetch final professional data for response
+    const finalProfessional = await mongoose.connection.collection('professionals').findOne({ 
+      _id: mongoose.Types.ObjectId(professionalId) 
+    });
+    
     // Return success response
     return res.status(200).json({
       success: true,
-      message: `Document ${newStatus} successfully`,
-      professional
+      message: `Document ${isValid ? 'approved' : 'rejected'} successfully`,
+      professional: finalProfessional
     });
+    
   } catch (error) {
-    logger.error('Error in document verification:', error);
-    return res.status(500).json({ success: false, error: 'Internal server error', message: error.message });
+    console.error('Error in document verification:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to verify document',
+      message: error.message
+    });
   }
 };
-  /**
- * Helper function to update the professional's overall status
- * based on their document statuses
- */
-const updateProfessionalStatus = async (professional) => {
-  // Get counts of each document status
+
+// Separate function to update professional status
+const updateProfessionalStatus = async (professionalId) => {
+  const professional = await Professional.findById(professionalId);
+  if (!professional) {
+    throw new Error('Professional not found');
+  }
+  
+  // Count document statuses
   const statusCounts = {
     pending: 0,
     approved: 0,
     rejected: 0,
     not_submitted: 0
   };
-
-  // Count statuses for each document type in documentsStatus
+  
+  // Count the statuses
   for (const type in professional.documentsStatus) {
     const status = professional.documentsStatus[type];
-    if (statusCounts[status] !== undefined) {
-      statusCounts[status]++;
-    }
-  }
-
-  // Determine the professional's overall status
-  if (statusCounts.rejected > 0) {
-    // If any document is rejected, mark the professional as rejected
-    professional.status = 'rejected';
-  } else if (statusCounts.pending > 0) {
-    // If any document is pending, mark as under review
-    professional.status = 'under_review';
-  } else if (statusCounts.not_submitted > 0 && statusCounts.approved > 0) {
-    // If some documents are approved but others not submitted
-    professional.status = 'document_pending';
-  } else if (statusCounts.approved > 0 && statusCounts.not_submitted === 0) {
-    // If all required documents are approved
-    professional.status = 'verified';
+    // Normalize the status
+    let normalizedStatus = status;
+    if (status === 'approve') normalizedStatus = 'approved';
+    if (status === 'reject') normalizedStatus = 'rejected';
     
-    // Update the onboarding step if they're in the documents step
-    if (professional.onboardingStep === 'documents') {
-      professional.onboardingStep = 'complete';
+    if (statusCounts[normalizedStatus] !== undefined) {
+      statusCounts[normalizedStatus]++;
     }
   }
+  
+  // Determine the new status
+  let newStatus = professional.status;
+  let newOnboardingStep = professional.onboardingStep;
+  
+  if (statusCounts.rejected > 0) {
+    newStatus = 'rejected';
+  } else if (statusCounts.pending > 0) {
+    newStatus = 'under_review';
+  } else if (statusCounts.not_submitted > 0 && statusCounts.approved > 0) {
+    newStatus = 'document_pending';
+  } else if (statusCounts.approved > 0 && statusCounts.not_submitted === 0) {
+    newStatus = 'verified';
+    
+    if (professional.onboardingStep === 'documents') {
+      newOnboardingStep = 'completed';
+    }
+  }
+  
+  // Only update if there's a change
+  if (newStatus !== professional.status || newOnboardingStep !== professional.onboardingStep) {
+    await Professional.updateOne(
+      { _id: professional._id },
+      { 
+        $set: { 
+          status: newStatus,
+          onboardingStep: newOnboardingStep
+        } 
+      },
+      { maxTimeMS: 5000 }
+    );
+  }
+  
+  return true;
 };
+
 
 const getProfessionalAvailability = async (req, res) => {
   try {

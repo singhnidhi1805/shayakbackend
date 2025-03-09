@@ -7,7 +7,7 @@ const router = express.Router();
 
 /**
  * @swagger
- * /auth/user/send-otp:
+ * /api/auth/user/send-otp:
  *   post:
  *     summary: Send OTP to a user's phone
  *     tags:
@@ -61,7 +61,7 @@ router.post('/user/send-otp', userAuth.sendOtp);
 
 /**
  * @swagger
- * /auth/user/verify-otp:
+ * /api/auth/user/verify-otp:
  *   post:
  *     summary: Verify OTP and authenticate the user
  *     tags:
@@ -130,7 +130,7 @@ router.post('/user/send-otp', userAuth.sendOtp);
 router.post('/user/verify-otp', userAuth.verifyOtp);
 /**
  * @swagger
- * /auth/user/send-otp:
+ * /api/auth/user/send-otp:
  *   post:
  *     summary: Send OTP to a user's phone
  *     tags:
@@ -175,7 +175,7 @@ router.post('/user/verify-otp', userAuth.verifyOtp);
 
 /**
  * @swagger
- * /auth/professional/send-otp:
+ * /api/auth/professional/send-otp:
  *   post:
  *     summary: Send OTP to a professional's phone
  *     tags:
@@ -220,7 +220,7 @@ router.post('/user/verify-otp', userAuth.verifyOtp);
 
 /**
  * @swagger
- * /auth/admin/send-otp:
+ * /api/auth/admin/send-otp:
  *   post:
  *     summary: Send OTP to an admin's phone
  *     tags:
@@ -265,7 +265,7 @@ router.post('/user/verify-otp', userAuth.verifyOtp);
 
 /**
  * @swagger
- * /auth/professional/verify-otp:
+ * /api/auth/professional/verify-otp:
  *   post:
  *     summary: Verify OTP and authenticate the professional
  *     tags:
@@ -329,7 +329,7 @@ router.post('/user/verify-otp', userAuth.verifyOtp);
 
 /**
  * @swagger
- * /auth/admin/verify-otp:
+ * /api/auth/admin/verify-otp:
  *   post:
  *     summary: Verify OTP and authenticate the admin
  *     tags:

@@ -44,13 +44,14 @@ const auth = (allowedRoles = ['user', 'professional', 'admin']) => {
         console.log('Token verified successfully:', {
           role: decoded.role,
           userId: decoded.userId,
+          id: decoded.id,
           tokenExp: new Date(decoded.exp * 1000)
         });
 
-        if (!decoded.role || (!decoded.userId && !decoded.id)) {
+        if (!decoded.role || (!decoded.id && !decoded.userId)) {
           return res.status(401).json({ 
             error: 'Invalid token payload',
-            details: 'Token missing required fields (role and userId/id)'
+            details: 'Token missing required fields (role and id/userId)'
           });
         }
 
@@ -71,7 +72,22 @@ const auth = (allowedRoles = ['user', 'professional', 'admin']) => {
           });
         }
 
-        const user = await Model.findById(decoded.id || decoded.userId);
+        // Always use the MongoDB _id (decoded.id) to find the user when available
+        const documentId = decoded.id || decoded.userId;
+        
+        // Try to find the user
+        let user = null;
+        
+        // First try to find by _id if it appears to be a valid MongoDB ObjectId
+        if (documentId && /^[0-9a-fA-F]{24}$/.test(documentId)) {
+          user = await Model.findById(documentId);
+        }
+        
+        // If not found and it's a professional, try to find by userId field
+        if (!user && decoded.role === 'professional' && decoded.userId) {
+          user = await Professional.findOne({ userId: decoded.userId });
+        }
+
         if (!user) {
           return res.status(401).json({ 
             error: 'User not found',

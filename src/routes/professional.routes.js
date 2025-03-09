@@ -9,6 +9,9 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth.middleware');
 const multer = require('multer');
+const verifyDocument = require('../controllers/document-verification.controller');
+const { body, validationResult } = require('express-validator');
+
 const { 
   getProfessionals,
   getProfessionalAvailability,
@@ -16,13 +19,12 @@ const {
   updateProfessionalLocation,
   updateProfessionalProfile,
   getProfessionalById,
-  verifyDocument,
 } = require('../controllers/professional.controller');
 
 const { ProfessionalService } = require('../services/professional.service');
 /**
  * @swagger
- * /professionals:
+ * /api/professionals:
  *   get:
  *     tags:
  *       - Professional
@@ -59,7 +61,7 @@ router.get('/', getProfessionals);
 
 /**
  * @swagger
- * /professionals/{id}/availability:
+ * /api/professionals/{id}/availability:
  *   get:
  *     tags:
  *       - Professional
@@ -92,7 +94,7 @@ router.get('/:id/availability', getProfessionalAvailability);
 
 /**
  * @swagger
- * /professionals/documents/validate:
+ * /api/professionals/documents/validate:
  *   post:
  *     tags:
  *       - Professional
@@ -139,7 +141,7 @@ router.post('/documents/validate', auth, validateProfessionalDocuments);
 
 /**
  * @swagger
- * /professionals/location:
+ * /api/professionals/location:
  *   put:
  *     tags:
  *       - Professional
@@ -179,7 +181,7 @@ router.put('/location', auth, updateProfessionalLocation);
 
 /**
  * @swagger
- * /professionals/profile:
+ * /api/professionals/profile:
  *   put:
  *     tags:
  *       - Professional
@@ -223,7 +225,7 @@ router.put('/location', auth, updateProfessionalLocation);
 
 /**
  * @swagger
- * /professionals/onboard:
+ * /api/professionals/onboard:
  *   post:
  *     tags:
  *       - Professional
@@ -281,7 +283,7 @@ router.put('/location', auth, updateProfessionalLocation);
 
 /**
  * @swagger
- * /professionals/metrics:
+ * /api/professionals/metrics:
  *   get:
  *     tags:
  *       - Professional
@@ -319,7 +321,7 @@ router.put('/location', auth, updateProfessionalLocation);
 
 /**
  * @swagger
- * /professionals/{id}:
+ * /api/professionals/{id}:
  *   get:
  *     summary: Get professional by ID
  *     description: Fetches a professional's details by their unique ID.
@@ -363,51 +365,51 @@ router.put('/location', auth, updateProfessionalLocation);
  */
 router.get('/:id', auth, getProfessionalById);
 
-/**
- * @swagger
- * /professionals/documents/verify:
- *   post:
- *     summary: Verify professional documents
- *     description: Allows an admin to verify a professional's uploaded documents.
- *     tags: [Professional]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               professionalId:
- *                 type: string
- *                 example: "67c87c63861e81bd0f1400fd"
- *               documentId:
- *                 type: string
- *                 example: "67cc1be5a6c21230771881d3"
- *               isValid:
- *                 type: boolean
- *                 example: true
- *               remarks:
- *                 type: string
- *                 example: "Document verified successfully."
- *     responses:
- *       "200":
- *         description: Document verification status updated successfully
- *       "400":
- *         description: Missing or invalid parameters
- *       "401":
- *         description: Unauthorized, missing or invalid token
- *       "404":
- *         description: Professional or document not found
- *       "500":
- *         description: Server error
- */
-router.post('/documents/verify', auth, verifyDocument);
+// /**
+//  * @swagger
+//  * /professionals/documents/verify:
+//  *   post:
+//  *     summary: Verify professional documents
+//  *     description: Allows an admin to verify a professional's uploaded documents.
+//  *     tags: [Professional]
+//  *     security:
+//  *       - bearerAuth: []
+//  *     requestBody:
+//  *       required: true
+//  *       content:
+//  *         application/json:
+//  *           schema:
+//  *             type: object
+//  *             properties:
+//  *               professionalId:
+//  *                 type: string
+//  *                 example: "67c87c63861e81bd0f1400fd"
+//  *               documentId:
+//  *                 type: string
+//  *                 example: "67cc1be5a6c21230771881d3"
+//  *               isValid:
+//  *                 type: boolean
+//  *                 example: true
+//  *               remarks:
+//  *                 type: string
+//  *                 example: "Document verified successfully."
+//  *     responses:
+//  *       "200":
+//  *         description: Document verification status updated successfully
+//  *       "400":
+//  *         description: Missing or invalid parameters
+//  *       "401":
+//  *         description: Unauthorized, missing or invalid token
+//  *       "404":
+//  *         description: Professional or document not found
+//  *       "500":
+//  *         description: Server error
+//  */
+// router.post('/documents/verify', auth, verifyDocument);
 
 /**
  * @swagger
- * /professionals/{id}/documents:
+ * /api/professionals/{id}/documents:
  *   get:
  *     summary: Get professional documents by professional ID
  *     description: Fetches the documents of a professional by their ID.
@@ -499,6 +501,99 @@ router.get('/:id/documents', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch professional documents: ' + error.message });
   }
 });
+
+/**
+ * @swagger
+ * /api/professionals/documents/verify:
+ *   post:
+ *     summary: Verify professional documents
+ *     description: Allows an admin to approve or reject a professional's uploaded documents.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               professionalId:
+ *                 type: string
+ *                 example: "67c87c63861e81bd0f1400fd"
+ *                 description: The MongoDB _id or userId of the professional
+ *               documentId:
+ *                 type: string
+ *                 example: "67cc1be5a6c21230771881d3"
+ *                 description: The MongoDB _id of the document to be verified
+ *               isValid:
+ *                 type: boolean
+ *                 example: true
+ *                 description: Whether the document is approved (`true`) or rejected (`false`)
+ *               remarks:
+ *                 type: string
+ *                 example: "Document verified successfully."
+ *                 description: Optional remarks regarding the verification (Max 500 characters)
+ *     responses:
+ *       200:
+ *         description: Document verification status updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Document approved successfully"
+ *                 professional:
+ *                   type: object
+ *       400:
+ *         description: Missing or invalid parameters in request body
+ *       401:
+ *         description: Unauthorized - Missing or invalid authentication token
+ *       403:
+ *         description: Forbidden - Only admins can verify documents
+ *       404:
+ *         description: Professional or document not found
+ *       504:
+ *         description: Operation timed out
+ *       500:
+ *         description: Internal server error
+ */
+
+// Validation middleware for verifying document request
+const validateVerificationRequest = [
+  body('professionalId')
+    .notEmpty().withMessage('Professional ID is required'),
+  body('documentId')
+    .notEmpty().withMessage('Document ID is required'),
+  body('isValid')
+    .isBoolean().withMessage('isValid must be a boolean value'),
+  body('remarks')
+    .optional()
+    .isString().withMessage('Remarks must be a string')
+    .isLength({ max: 500 }).withMessage('Remarks cannot exceed 500 characters'),
+  (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        success: false, 
+        errors: errors.array() 
+      });
+    }
+    next();
+  }
+];
+
+// Route handler for verifying documents
+router.post(
+  '/documents/verify',
+  auth.admin, // Only admins can verify documents
+  validateVerificationRequest,
+  verifyDocument
+);
 
 
 

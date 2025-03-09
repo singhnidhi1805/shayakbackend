@@ -5,7 +5,7 @@ const BookingController = require('../controllers/booking.controller');
 
 /**
  * @swagger
- * /bookings:
+ * /api/bookings:
  *   post:
  *     summary: Create a new booking
  *     tags: [Bookings]
@@ -47,7 +47,7 @@ router.post('/', auth, (req, res) => {
 
 /**
  * @swagger
- * /bookings/{bookingId}/accept:
+ * /api/bookings/{bookingId}/accept:
  *   post:
  *     summary: Accept a booking (Professional only)
  *     tags: [Bookings]
@@ -69,7 +69,7 @@ router.post('/:bookingId/accept', auth, (req, res) => {
 
 /**
  * @swagger
- * /bookings/active:
+ * /api/bookings/active:
  *   get:
  *     summary: Get active booking for the user
  *     tags: [Bookings]
@@ -85,7 +85,7 @@ router.get('/active', auth, (req, res) => {
 
 /**
  * @swagger
- * /bookings/history:
+ * /api/bookings/history:
  *   get:
  *     summary: Get booking history
  *     tags: [Bookings]
@@ -119,7 +119,7 @@ router.get('/history', auth, (req, res) => {
  * @swagger
  * //**
  * @swagger
- * /bookings/{bookingId}/track:
+ * /api/bookings/{bookingId}/track:
  *   get:
  *     summary: Get real-time tracking information
  *     tags: [Bookings]
@@ -142,7 +142,7 @@ router.get('/:bookingId/track',
 
 /**
 * @swagger
-* /bookings/{bookingId}/complete:
+* /api/bookings/{bookingId}/complete:
 *   post:
 *     summary: Complete a booking
 *     tags: [Bookings]

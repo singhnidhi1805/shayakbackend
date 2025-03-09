@@ -5,7 +5,7 @@ const ProfessionalLocationController = require('../controllers/professional-loca
 
 /**
  * @swagger
- * /professional/location:
+ * /api/professional/location:
  *   post:
  *     summary: Update professional's current location
  *     tags: [Professional Location]
@@ -126,7 +126,7 @@ const ProfessionalLocationController = require('../controllers/professional-loca
 
 /**
  * @swagger
- * /professional/nearby:
+ * /api/professional/nearby:
  *   get:
  *     summary: Get nearby available professionals
  *     tags: [Professional Location]
