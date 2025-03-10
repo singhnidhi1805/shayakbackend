@@ -215,10 +215,14 @@ class ProfessionalOnboardingService {
           [`documents.$[doc].status`]: documentStatus,
           [`documents.$[doc].verifiedBy`]: adminId,
           [`documents.$[doc].verifiedAt`]: new Date(),
-          [`documents.$[doc].remarks`]: remarks,
           [`documentsStatus.${document.type}`]: documentStatus
         }
       };
+      
+      // Add remarks if provided
+      if (remarks) {
+        updateQuery.$set[`documents.$[doc].remarks`] = remarks;
+      }
   
       // Use atomic findOneAndUpdate with array filters
       const updatedProfessional = await Professional.findOneAndUpdate(
@@ -235,40 +239,60 @@ class ProfessionalOnboardingService {
         throw createError(500, 'Failed to update document status');
       }
   
-      // Check if all required documents are verified and update status accordingly
+      // Check if all REQUIRED documents are verified
+      // Focus only on required documents, ignoring optional ones
       const requiredDocuments = ['id_proof', 'address_proof'];
-      const requiredDocStatus = requiredDocuments.map(docType => 
-        updatedProfessional.documentsStatus[docType] === 'approved'
-      );
       
-      const allRequiredVerified = requiredDocStatus.every(Boolean);
+      // Check if all required documents are approved
+      let allRequiredApproved = true;
+      let hasRejected = false;
       
-      // Initialize statusUpdate variable outside the if block
-      let newStatus = updatedProfessional.status;
+      // Loop through required documents only
+      for (const docType of requiredDocuments) {
+        const status = updatedProfessional.documentsStatus[docType];
+        if (status === 'rejected') {
+          hasRejected = true;
+        }
+        if (status !== 'approved') {
+          allRequiredApproved = false;
+        }
+      }
+      
+      // Determine the professional's overall status
+      let newStatus;
       let newOnboardingStep = updatedProfessional.onboardingStep;
       let newEmployeeId = updatedProfessional.employeeId;
   
-      if (allRequiredVerified || documentStatus === 'rejected') {
-        newStatus = allRequiredVerified ? 'verified' : 'document_pending';
-        newOnboardingStep = allRequiredVerified ? 'completed' : updatedProfessional.onboardingStep;
-  
-        if (allRequiredVerified && !updatedProfessional.employeeId) {
-          const year = new Date().getFullYear().toString().substr(-2);
-          const count = await Professional.countDocuments();
-          newEmployeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
+      if (hasRejected) {
+        newStatus = 'rejected';
+      } else if (allRequiredApproved) {
+        newStatus = 'verified';
+        // If all required documents are verified, set onboarding as completed
+        if (updatedProfessional.onboardingStep === 'documents') {
+          newOnboardingStep = 'completed';
         }
-  
-        await Professional.updateOne(
-          { _id: professionalId },
-          { 
-            $set: {
-              status: newStatus,
-              onboardingStep: newOnboardingStep,
-              ...(newEmployeeId ? { employeeId: newEmployeeId } : {})
-            } 
-          }
-        );
+      } else {
+        newStatus = 'document_pending';
       }
+  
+      // Generate employee ID if verified and doesn't have one yet
+      if (newStatus === 'verified' && !updatedProfessional.employeeId) {
+        const year = new Date().getFullYear().toString().substr(-2);
+        const count = await Professional.countDocuments();
+        newEmployeeId = `PRO${year}${(count + 1).toString().padStart(4, '0')}`;
+      }
+  
+      // Update professional status in a separate operation
+      await Professional.findByIdAndUpdate(
+        professionalId,
+        { 
+          $set: {
+            status: newStatus,
+            onboardingStep: newOnboardingStep,
+            ...(newEmployeeId ? { employeeId: newEmployeeId } : {})
+          } 
+        }
+      );
   
       // Send notifications asynchronously
       const notificationPromises = [
@@ -279,7 +303,7 @@ class ProfessionalOnboardingService {
           data: {
             name: professional.name,
             documentType: document.type,
-            status: documentStatus, // Pass the status to the template
+            status: documentStatus,
             remarks: remarks || '',
             employeeId: newEmployeeId || professional.employeeId || 'Pending'
           }
@@ -297,7 +321,7 @@ class ProfessionalOnboardingService {
         );
       }
   
-      if (allRequiredVerified) {
+      if (allRequiredApproved) {
         notificationPromises.push(
           this.emailService.sendEmail({
             template: 'onboarding-complete',
@@ -315,13 +339,14 @@ class ProfessionalOnboardingService {
         logger.warn('Notification error:', error);
       });
   
-      return { success: true, professional: updatedProfessional };
+      // Fetch and return the updated professional for response
+      const finalProfessional = await Professional.findById(professionalId);
+      return { success: true, professional: finalProfessional };
     } catch (error) {
       logger.error('Document verification error:', error);
       throw error;
     }
   }
-
   async getOnboardingStatus(professionalId) {
     try {
       // Use _id directly to find the professional

@@ -99,7 +99,7 @@ const validateVerificationRequest = [
 
 // Route handler for verifying documents
 router.post(
-  '/documents/verify',
+  '/api/professional/documents/verify',
   auth, // Only admins can verify documents
   validateVerificationRequest,
   verifyDocument
